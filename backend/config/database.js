@@ -1,33 +1,45 @@
 const mongoose = require('mongoose');
+const env = require('./env');
+const logger = require('../utils/logger');
 
 const connectDB = async () => {
+  if (!env.mongodbUri) {
+    logger.warn('MONGODB_URI is missing. Server will run without database connection.');
+    return;
+  }
+
   try {
-    const conn = await mongoose.connect(process.env.MONGODB_URI, {
-      useNewUrlParser: true,
-      useUnifiedTopology: true,
-    });
+    if (mongoose.connection.readyState === 1) {
+      return mongoose.connection;
+    }
 
-    console.log(`✅ MongoDB Connected: ${conn.connection.host}`);
+    const conn = await mongoose.connect(env.mongodbUri);
 
-    // Handle connection events
+    logger.info(`MongoDB connected: ${conn.connection.host}`);
+
     mongoose.connection.on('error', (err) => {
-      console.error(`❌ MongoDB connection error: ${err}`);
+      logger.error(`MongoDB connection error: ${err.message}`);
     });
 
     mongoose.connection.on('disconnected', () => {
-      console.log('⚠️  MongoDB disconnected');
+      logger.warn('MongoDB disconnected');
     });
 
-    // Graceful shutdown
-    process.on('SIGINT', async () => {
-      await mongoose.connection.close();
-      console.log('MongoDB connection closed through app termination');
-      process.exit(0);
-    });
+    return mongoose.connection;
   } catch (error) {
-    console.error(`❌ Error connecting to MongoDB: ${error.message}`);
-    process.exit(1);
+    logger.error(`Error connecting to MongoDB: ${error.message}`);
+    return null;
   }
 };
 
-module.exports = connectDB;
+const disconnectDB = async () => {
+  if (mongoose.connection.readyState !== 0) {
+    await mongoose.connection.close();
+    logger.info('MongoDB connection closed');
+  }
+};
+
+module.exports = {
+  connectDB,
+  disconnectDB,
+};
