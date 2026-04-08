@@ -3,6 +3,7 @@ const { Server } = require('socket.io');
 const Conversation = require('../models/Conversation');
 const Message = require('../models/Message');
 const User = require('../models/User');
+const env = require('../config/env');
 const { createMessage } = require('./messageService');
 const presenceService = require('./presenceService');
 const { verifyAccessToken } = require('./tokenService');
@@ -31,9 +32,22 @@ const closeSocket = async () => {
 };
 
 const initSocket = (server) => {
+  const corsAllowAll = env.corsOrigins.includes('*');
   io = new Server(server, {
     cors: {
-      origin: process.env.CORS_ORIGIN || '*',
+      origin: (origin, callback) => {
+        if (!origin) {
+          callback(null, true);
+          return;
+        }
+
+        if (corsAllowAll || env.corsOrigins.includes(origin)) {
+          callback(null, true);
+          return;
+        }
+
+        callback(null, false);
+      },
       credentials: true,
     },
   });

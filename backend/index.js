@@ -4,10 +4,12 @@ const path = require('node:path');
 const cors = require('cors');
 const express = require('express');
 const helmet = require('helmet');
+const swaggerUi = require('swagger-ui-express');
 
 const { connectDB, disconnectDB } = require('./config/database');
 const env = require('./config/env');
 const swaggerDocument = require('./config/swagger');
+const clientContext = require('./middlewares/clientContext');
 const { errorHandler } = require('./middlewares/errorHandler');
 const notFound = require('./middlewares/notFound');
 const apiRoutes = require('./routes');
@@ -16,37 +18,30 @@ const initSocket = require('./services/socketService');
 const { closeSocket } = initSocket;
 const logger = require('./utils/logger');
 
-const createSwaggerHtml = () => `<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>OTT API Docs</title>
-  <link rel="stylesheet" href="https://unpkg.com/swagger-ui-dist@5/swagger-ui.css" />
-</head>
-<body>
-  <div id="swagger-ui"></div>
-  <script src="https://unpkg.com/swagger-ui-dist@5/swagger-ui-bundle.js"></script>
-  <script>
-    window.ui = SwaggerUIBundle({
-      url: '/api-docs/openapi.json',
-      dom_id: '#swagger-ui',
-      deepLinking: true
-    });
-  </script>
-</body>
-</html>`;
-
 const createApp = () => {
   const app = express();
+  const corsAllowAll = env.corsOrigins.includes('*');
 
   app.use(helmet());
   app.use(
     cors({
-      origin: env.corsOrigin,
+      origin: (origin, callback) => {
+        if (!origin) {
+          callback(null, true);
+          return;
+        }
+
+        if (corsAllowAll || env.corsOrigins.includes(origin)) {
+          callback(null, true);
+          return;
+        }
+
+        callback(null, false);
+      },
       credentials: true,
     }),
   );
+  app.use(clientContext);
   app.use(express.json({ limit: '10mb' }));
   app.use(express.urlencoded({ extended: true }));
 
@@ -66,9 +61,7 @@ const createApp = () => {
   app.get('/api-docs/openapi.json', (_req, res) => {
     res.json(swaggerDocument);
   });
-  app.get('/api-docs', (_req, res) => {
-    res.type('html').send(createSwaggerHtml());
-  });
+  app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(swaggerDocument, { explorer: true }));
 
   app.use('/api/v1', apiRoutes);
 

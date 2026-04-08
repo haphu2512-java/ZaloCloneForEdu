@@ -7,7 +7,37 @@ const { createConversationSchema } = require('../validators/conversationSchemas'
 
 const router = express.Router();
 
+/**
+ * @openapi
+ * /conversations:
+ *   get:
+ *     tags: [Conversations]
+ *     summary: List current user's conversations
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: Conversations fetched
+ */
 router.get('/', auth, conversationController.listConversations);
+/**
+ * @openapi
+ * /conversations:
+ *   post:
+ *     tags: [Conversations]
+ *     summary: Create conversation (direct or group)
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             $ref: '#/components/schemas/ConversationInput'
+ *     responses:
+ *       201:
+ *         description: Conversation created
+ */
 router.post('/', auth, validate({ body: createConversationSchema }), conversationController.createConversation);
 
 module.exports = router;

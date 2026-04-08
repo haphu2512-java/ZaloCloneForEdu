@@ -19,9 +19,11 @@ cp .env.example .env
 2. Kiểm tra các biến quan trọng:
 
 - `MONGODB_URI`
+- `REDIS_URL`
 - `JWT_SECRET`
 - `JWT_REFRESH_SECRET`
 - `PORT`
+- `CORS_ORIGIN` (hỗ trợ nhiều origin, phân tách bằng dấu phẩy)
 
 ## 3) Chạy local
 
@@ -40,7 +42,7 @@ GET http://localhost:5000/health
 Swagger docs:
 
 ```bash
-GET http://localhost:5000/api-docs
+GET http://localhost:5000/api-docs/
 GET http://localhost:5000/api-docs/openapi.json
 ```
 
@@ -56,7 +58,28 @@ Test suite hiện có:
 - `tests/auth.e2e.test.js`
 - `tests/message.e2e.test.js`
 
-## 4) API đã implement
+## 4) Hỗ trợ Web và Mobile
+
+Backend được thiết kế để dùng chung cho web frontend và mobile app:
+
+- Auth thống nhất qua `Authorization: Bearer <accessToken>`
+- Socket.IO auth thống nhất (token ở handshake auth/query/header)
+- Metadata client hỗ trợ theo header:
+  - `x-client-platform`: `web | ios | android | desktop | unknown`
+  - `x-app-version`: phiên bản ứng dụng
+  - `x-device-id`: định danh thiết bị
+  - `x-request-id`: request correlation id (nếu thiếu server tự sinh và trả lại ở response header)
+- CORS hỗ trợ multi-origin để phục vụ nhiều web domain cùng lúc
+
+Ví dụ cấu hình CORS cho web:
+
+```env
+CORS_ORIGIN=http://localhost:3000,http://localhost:5173,https://your-web-domain.com
+```
+
+Lưu ý mobile app native thường không cần CORS, nhưng vẫn nên gửi `x-client-platform` và `x-device-id` để backend theo dõi session rõ ràng hơn.
+
+## 5) API đã implement
 
 ### Auth
 
@@ -95,13 +118,14 @@ Test suite hiện có:
 - `GET /api/v1/notifications`
 - `PUT /api/v1/notifications/:id/read`
 
-## 5) Socket.IO events
+## 6) Socket.IO events
 
 - Client -> Server: `join_conversation`, `send_message`, `typing`, `stop_typing`, `message_delivered`, `message_seen`
 - Server -> Client: `new_message`, `typing`, `stop_typing`, `message_delivered`, `message_seen`, `user_online`, `user_offline`
 
-## 6) Ghi chú hiện tại
+## 7) Ghi chú hiện tại
 
 - Redis blacklist/presence đã tích hợp thật khi Redis available.
 - Nếu Redis down, hệ thống tự fallback sang in-memory để không làm sập API local.
 - Upload media đang dùng local storage (`backend/uploads`).
+- Swagger được sinh từ annotation ngay trong các file `backend/routes/*.js`, và render bằng `swagger-ui-express`.

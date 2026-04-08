@@ -306,3 +306,18 @@ npm run dev
 ```
 
 ---
+
+# 16. Current Implementation Notes (Web + Mobile)
+
+Backend hiện đã bổ sung các điểm để dùng chung cho web và mobile:
+
+* Swagger docs hiển thị trực tiếp từ route annotations:
+  * `http://localhost:5000/api-docs/`
+  * `http://localhost:5000/api-docs/openapi.json`
+* Redis thật cho blacklist/presence (fallback in-memory khi Redis không sẵn sàng).
+* Header metadata client:
+  * `x-client-platform` (`web|ios|android|desktop|unknown`)
+  * `x-app-version`
+  * `x-device-id`
+  * `x-request-id` (server tự sinh nếu thiếu và trả lại trong response)
+* CORS hỗ trợ nhiều web origin qua biến `CORS_ORIGIN` (danh sách phân tách bằng dấu phẩy).

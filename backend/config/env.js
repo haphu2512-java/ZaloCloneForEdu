@@ -6,10 +6,19 @@ dotenv.config({
   quiet: true,
 });
 
+const parseList = (raw, fallback = []) => {
+  if (!raw || typeof raw !== 'string') return fallback;
+  return raw
+    .split(',')
+    .map((item) => item.trim())
+    .filter(Boolean);
+};
+
 module.exports = {
   port: Number(process.env.PORT || 5000),
   nodeEnv: process.env.NODE_ENV || 'development',
   corsOrigin: process.env.CORS_ORIGIN || '*',
+  corsOrigins: parseList(process.env.CORS_ORIGIN || '*', ['*']),
   mongodbUri: process.env.MONGODB_URI || '',
   jwtSecret: process.env.JWT_SECRET || 'dev_access_secret',
   jwtRefreshSecret: process.env.JWT_REFRESH_SECRET || 'dev_refresh_secret',
