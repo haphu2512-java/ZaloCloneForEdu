@@ -30,7 +30,8 @@ const sendMessage = asyncHandler(async (req, res) => {
 
 const listMessagesByConversation = asyncHandler(async (req, res) => {
   const conversationId = req.params.id;
-  const { limit, cursor } = req.query;
+  const limit = Number(req.query.limit);
+  const { cursor } = req.query;
 
   await ensureConversationMember(conversationId, req.user._id);
 

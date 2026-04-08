@@ -30,4 +30,9 @@ module.exports = {
   typingTtlSeconds: Number(process.env.TYPING_TTL_SECONDS || 15),
   redisConnectTimeoutMs: Number(process.env.REDIS_CONNECT_TIMEOUT_MS || 5000),
   redisEnableOfflineQueue: process.env.REDIS_ENABLE_OFFLINE_QUEUE !== 'false',
+  cloudinaryCloudName: process.env.CLOUDINARY_CLOUD_NAME || '',
+  cloudinaryApiKey: process.env.CLOUDINARY_API_KEY || '',
+  cloudinaryApiSecret: process.env.CLOUDINARY_API_SECRET || '',
+  cloudinaryUploadFolder: process.env.CLOUDINARY_UPLOAD_FOLDER || 'ott-messaging',
+  cloudinarySignatureTtlSeconds: Number(process.env.CLOUDINARY_SIGNATURE_TTL_SECONDS || 60),
 };

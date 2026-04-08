@@ -22,6 +22,7 @@ const options = {
       { name: 'Messages' },
       { name: 'Media' },
       { name: 'Notifications' },
+      { name: 'Search' },
     ],
     components: {
       securitySchemes: {
@@ -165,6 +166,26 @@ const options = {
             fileName: { type: 'string' },
             mimeType: { type: 'string' },
             contentBase64: { type: 'string' },
+          },
+        },
+        CloudinarySignatureInput: {
+          type: 'object',
+          properties: {
+            folder: { type: 'string' },
+            publicId: { type: 'string' },
+            resourceType: { type: 'string', enum: ['image', 'video', 'raw', 'auto'] },
+          },
+        },
+        RegisterCloudinaryMediaInput: {
+          type: 'object',
+          required: ['fileName', 'mimeType', 'size', 'url', 'publicId'],
+          properties: {
+            fileName: { type: 'string' },
+            mimeType: { type: 'string' },
+            size: { type: 'integer' },
+            url: { type: 'string', format: 'uri' },
+            publicId: { type: 'string' },
+            resourceType: { type: 'string', enum: ['image', 'video', 'raw', 'auto'], default: 'auto' },
           },
         },
       },

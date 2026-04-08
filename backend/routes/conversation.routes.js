@@ -3,7 +3,7 @@ const express = require('express');
 const conversationController = require('../controllers/conversationController');
 const auth = require('../middlewares/auth');
 const validate = require('../middlewares/validate');
-const { createConversationSchema } = require('../validators/conversationSchemas');
+const { conversationPaginationQuerySchema, createConversationSchema } = require('../validators/conversationSchemas');
 
 const router = express.Router();
 
@@ -15,11 +15,22 @@ const router = express.Router();
  *     summary: List current user's conversations
  *     security:
  *       - bearerAuth: []
+ *     parameters:
+ *       - in: query
+ *         name: page
+ *         required: false
+ *         schema:
+ *           type: integer
+ *       - in: query
+ *         name: limit
+ *         required: false
+ *         schema:
+ *           type: integer
  *     responses:
  *       200:
  *         description: Conversations fetched
  */
-router.get('/', auth, conversationController.listConversations);
+router.get('/', auth, validate({ query: conversationPaginationQuerySchema }), conversationController.listConversations);
 /**
  * @openapi
  * /conversations:

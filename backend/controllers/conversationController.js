@@ -5,32 +5,75 @@ const ApiError = require('../utils/apiError');
 const { successResponse } = require('../utils/apiResponse');
 
 const listConversations = asyncHandler(async (req, res) => {
-  const conversations = await Conversation.find({
+  const page = Number(req.query.page);
+  const limit = Number(req.query.limit);
+  const skip = (page - 1) * limit;
+
+  const baseFilter = {
     participants: req.user._id,
-  })
-    .populate('participants', 'username email avatarUrl isOnline lastSeen')
-    .sort({ lastMessageAt: -1, updatedAt: -1 })
-    .limit(100);
+  };
+
+  const [conversations, total] = await Promise.all([
+    Conversation.find(baseFilter)
+      .populate('participants', 'username email avatarUrl isOnline lastSeen')
+      .sort({ lastMessageAt: -1, updatedAt: -1 })
+      .skip(skip)
+      .limit(limit),
+    Conversation.countDocuments(baseFilter),
+  ]);
+
+  if (conversations.length === 0) {
+    return successResponse(
+      res,
+      {
+        items: [],
+        pagination: {
+          page,
+          limit,
+          total,
+          totalPages: 0,
+        },
+      },
+      'Conversations fetched',
+    );
+  }
 
   const conversationIds = conversations.map((conversation) => conversation._id);
-  const latestMessages = await Message.find({ conversationId: { $in: conversationIds } })
-    .sort({ createdAt: -1 })
-    .limit(conversationIds.length || 1)
-    .populate('senderId', 'username');
+  const groupedLatest = await Message.aggregate([
+    { $match: { conversationId: { $in: conversationIds } } },
+    { $sort: { conversationId: 1, createdAt: -1, _id: -1 } },
+    { $group: { _id: '$conversationId', latestMessage: { $first: '$$ROOT' } } },
+  ]);
+
+  const latestMessages = groupedLatest.map((item) => item.latestMessage);
+  await Message.populate(latestMessages, {
+    path: 'senderId',
+    select: 'username',
+  });
 
   const latestByConversation = new Map();
   for (const message of latestMessages) {
-    if (!latestByConversation.has(message.conversationId.toString())) {
-      latestByConversation.set(message.conversationId.toString(), message);
-    }
+    latestByConversation.set(message.conversationId.toString(), message);
   }
 
-  const data = conversations.map((conversation) => ({
+  const items = conversations.map((conversation) => ({
     ...conversation.toObject(),
     latestMessage: latestByConversation.get(conversation._id.toString()) || null,
   }));
 
-  return successResponse(res, { conversations: data }, 'Conversations fetched');
+  return successResponse(
+    res,
+    {
+      items,
+      pagination: {
+        page,
+        limit,
+        total,
+        totalPages: Math.ceil(total / limit),
+      },
+    },
+    'Conversations fetched',
+  );
 });
 
 const createConversation = asyncHandler(async (req, res) => {

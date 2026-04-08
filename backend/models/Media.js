@@ -29,6 +29,15 @@ const mediaSchema = new mongoose.Schema(
       type: String,
       required: true,
     },
+    providerPublicId: {
+      type: String,
+      default: null,
+    },
+    providerResourceType: {
+      type: String,
+      enum: ['image', 'video', 'raw', 'auto'],
+      default: null,
+    },
   },
   { timestamps: true },
 );

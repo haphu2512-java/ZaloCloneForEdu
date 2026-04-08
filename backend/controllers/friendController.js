@@ -86,12 +86,35 @@ const removeFriend = asyncHandler(async (req, res) => {
 });
 
 const getFriendList = asyncHandler(async (req, res) => {
-  const user = await User.findById(req.user._id).populate({
-    path: 'friends',
-    select: 'username email phone avatarUrl isOnline lastSeen',
-  });
+  const page = Number(req.query.page);
+  const limit = Number(req.query.limit);
 
-  return successResponse(res, { friends: user.friends }, 'Friend list fetched');
+  const user = await User.findById(req.user._id).select('friends');
+  const total = user?.friends?.length || 0;
+  const skip = (page - 1) * limit;
+
+  const paginatedFriendIds = user.friends.slice(skip, skip + limit);
+  const friends = await User.find({
+    _id: { $in: paginatedFriendIds },
+    deletedAt: null,
+  }).select('username email phone avatarUrl isOnline lastSeen');
+
+  const orderMap = new Map(paginatedFriendIds.map((id, index) => [id.toString(), index]));
+  friends.sort((a, b) => orderMap.get(a._id.toString()) - orderMap.get(b._id.toString()));
+
+  return successResponse(
+    res,
+    {
+      items: friends,
+      pagination: {
+        page,
+        limit,
+        total,
+        totalPages: Math.ceil(total / limit),
+      },
+    },
+    'Friend list fetched',
+  );
 });
 
 module.exports = {

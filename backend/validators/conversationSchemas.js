@@ -6,6 +6,12 @@ const createConversationSchema = z.object({
   participantIds: z.array(z.string().trim().min(24).max(24)).min(1),
 });
 
+const conversationPaginationQuerySchema = z.object({
+  limit: z.coerce.number().int().min(1).max(100).default(20),
+  page: z.coerce.number().int().min(1).default(1),
+});
+
 module.exports = {
   createConversationSchema,
+  conversationPaginationQuerySchema,
 };

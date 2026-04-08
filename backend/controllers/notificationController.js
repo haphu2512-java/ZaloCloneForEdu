@@ -4,7 +4,8 @@ const ApiError = require('../utils/apiError');
 const { successResponse } = require('../utils/apiResponse');
 
 const listNotifications = asyncHandler(async (req, res) => {
-  const { page, limit } = req.query;
+  const page = Number(req.query.page);
+  const limit = Number(req.query.limit);
   const skip = (page - 1) * limit;
 
   const [items, total] = await Promise.all([

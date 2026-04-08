@@ -6,6 +6,7 @@ const friendRoutes = require('./friend.routes');
 const mediaRoutes = require('./media.routes');
 const messageRoutes = require('./message.routes');
 const notificationRoutes = require('./notification.routes');
+const searchRoutes = require('./search.routes');
 const userRoutes = require('./user.routes');
 
 const router = express.Router();
@@ -17,5 +18,6 @@ router.use('/conversations', conversationRoutes);
 router.use('/messages', messageRoutes);
 router.use('/media', mediaRoutes);
 router.use('/notifications', notificationRoutes);
+router.use('/search', searchRoutes);
 
 module.exports = router;

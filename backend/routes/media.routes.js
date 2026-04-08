@@ -3,7 +3,12 @@ const express = require('express');
 const mediaController = require('../controllers/mediaController');
 const auth = require('../middlewares/auth');
 const validate = require('../middlewares/validate');
-const { mediaIdParamSchema, uploadMediaSchema } = require('../validators/mediaSchemas');
+const {
+  cloudinarySignatureSchema,
+  mediaIdParamSchema,
+  registerCloudinaryMediaSchema,
+  uploadMediaSchema,
+} = require('../validators/mediaSchemas');
 
 const router = express.Router();
 
@@ -26,6 +31,54 @@ const router = express.Router();
  *         description: Media uploaded
  */
 router.post('/upload', auth, validate({ body: uploadMediaSchema }), mediaController.uploadMedia);
+/**
+ * @openapi
+ * /media/cloudinary/signature:
+ *   post:
+ *     tags: [Media]
+ *     summary: Generate Cloudinary signed upload params for frontend direct upload
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       required: false
+ *       content:
+ *         application/json:
+ *           schema:
+ *             $ref: '#/components/schemas/CloudinarySignatureInput'
+ *     responses:
+ *       200:
+ *         description: Cloudinary signature generated
+ */
+router.post(
+  '/cloudinary/signature',
+  auth,
+  validate({ body: cloudinarySignatureSchema }),
+  mediaController.getCloudinarySignature,
+);
+/**
+ * @openapi
+ * /media/cloudinary/register:
+ *   post:
+ *     tags: [Media]
+ *     summary: Register uploaded Cloudinary file metadata into database
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             $ref: '#/components/schemas/RegisterCloudinaryMediaInput'
+ *     responses:
+ *       201:
+ *         description: Cloudinary media registered
+ */
+router.post(
+  '/cloudinary/register',
+  auth,
+  validate({ body: registerCloudinaryMediaSchema }),
+  mediaController.registerCloudinaryMedia,
+);
 /**
  * @openapi
  * /media/{id}:
