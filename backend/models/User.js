@@ -4,18 +4,18 @@ const userSchema = new mongoose.Schema(
   {
     username: {
       type: String,
-      required: true,
       trim: true,
       minlength: 3,
       maxlength: 50,
       unique: true,
+      sparse: true,
     },
     email: {
       type: String,
-      required: true,
       trim: true,
       lowercase: true,
       unique: true,
+      sparse: true,
     },
     passwordHash: {
       type: String,
@@ -24,6 +24,8 @@ const userSchema = new mongoose.Schema(
     phone: {
       type: String,
       default: null,
+      unique: true,
+      sparse: true,
     },
     avatarUrl: {
       type: String,
@@ -50,6 +52,26 @@ const userSchema = new mongoose.Schema(
       default: false,
     },
     lastSeen: {
+      type: Date,
+      default: null,
+    },
+    isEmailVerified: {
+      type: Boolean,
+      default: false,
+    },
+    emailVerificationToken: {
+      type: String,
+      default: null,
+    },
+    emailVerificationExpires: {
+      type: Date,
+      default: null,
+    },
+    resetPasswordToken: {
+      type: String,
+      default: null,
+    },
+    resetPasswordExpires: {
       type: Date,
       default: null,
     },

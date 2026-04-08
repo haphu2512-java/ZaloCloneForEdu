@@ -1,120 +1,139 @@
 // ============================================================
-// Chat Types - Khớp 1:1 với Backend API Message Schema
+// Chat Types - Khớp 1:1 với Backend Models
+// Conversation, Message, Friend
 // ============================================================
 
-/** Loại tin nhắn được backend hỗ trợ */
-export type MessageType = 'text' | 'image' | 'video' | 'file' | 'audio' | 'system';
-
-/** Loại phòng chat */
-export type RoomModel = 'Class' | 'Group' | 'Conversation';
+/** Loại conversation */
+export type ConversationType = 'direct' | 'group';
 
 /** Trạng thái tin nhắn phía client */
 export type MessageStatus = 'sending' | 'sent' | 'delivered' | 'read' | 'failed';
 
-/** Vai trò người dùng */
-export type UserRole = 'student' | 'teacher' | 'admin';
-
 // --- Sub-types ---
 
-export interface Attachment {
-  name: string;
-  url: string;
-  type: string; // mime type, e.g. 'image/png'
-  size: number; // bytes
+/** User info khi được populate */
+export interface UserInfo {
+  _id: string;
+  username: string;
+  email?: string;
+  avatarUrl?: string | null;
+  isOnline?: boolean;
+  lastSeen?: string | null;
 }
 
-export interface ReadReceipt {
-  user: string; // userId
-  readAt: string; // ISO date-time
+/** Sender info khi populate senderId */
+export interface SenderInfo {
+  _id: string;
+  username: string;
+  avatarUrl?: string | null;
+}
+
+// --- Core Models ---
+
+/** Backend Conversation model */
+export interface Conversation {
+  _id: string;
+  type: ConversationType;
+  name?: string | null;
+  participants: UserInfo[];
+  createdBy: string;
+  lastMessageAt?: string | null;
+  createdAt: string;
+  updatedAt: string;
+  /** Injected by backend list endpoint */
+  latestMessage?: Message | null;
 }
 
 export interface Reaction {
-  user: string; // userId
-  emoji: string; // e.g. '👍'
-}
-
-export interface UserInfo {
-  _id: string;
-  fullName: string;
-  avatar?: string;
-  email?: string;
-}
-
-// --- Core Types ---
-
-/** Schema Message khớp với backend /messages API */
-export interface Message {
-  _id: string;
-  content: string;
-  type: MessageType;
-  sender: UserInfo;
-  room: string;
-  roomModel: RoomModel;
-  attachments: Attachment[];
-  isEdited: boolean;
-  editedAt?: string;
-  isDeleted: boolean;
-  replyTo?: Message | string; // populated or just ID
-  readBy: ReadReceipt[];
-  reactions: Reaction[];
-  createdAt: string;
-  updatedAt: string;
-
-  // Client-only fields
-  status?: MessageStatus;
-}
-
-/** Request body để gửi tin nhắn - POST /messages */
-export interface SendMessagePayload {
-  content?: string;
-  type?: MessageType;
-  roomId: string;
-  roomModel: RoomModel;
-  attachments?: Attachment[];
-  replyTo?: string; // message ID
-}
-
-/** Request body để sửa tin nhắn - PUT /messages/:id */
-export interface UpdateMessagePayload {
-  content: string;
-}
-
-/** Request body để thêm reaction - POST /messages/:id/reaction */
-export interface AddReactionPayload {
+  userId: string;
   emoji: string;
 }
 
-/** Params cho GET /messages */
+/** Backend Message model */
+export interface Message {
+  _id: string;
+  conversationId: string;
+  senderId: SenderInfo;
+  content: string;
+  mediaIds: string[];
+  replyTo?: Message | string | null;
+  forwardFrom?: Message | string | null;
+  deliveredTo: string[];
+  seenBy: string[];
+  isRecalled?: boolean;
+  deletedBy?: string[];
+  reactions?: Reaction[];
+  createdAt: string;
+  updatedAt: string;
+  /** Client-only */
+  status?: MessageStatus;
+}
+
+/** Backend FriendRequest model */
+export interface FriendRequest {
+  _id: string;
+  fromUserId: string;
+  toUserId: string;
+  status: 'pending' | 'accepted' | 'rejected';
+  respondedAt?: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+// --- API Payloads ---
+
+/** POST /messages/send body */
+export interface SendMessagePayload {
+  conversationId: string;
+  content?: string;
+  mediaIds?: string[];
+  replyTo?: string;
+  forwardFrom?: string;
+}
+
+/** POST /conversations body */
+export interface CreateConversationPayload {
+  type: ConversationType;
+  name?: string;
+  participantIds: string[];
+}
+
+/** POST /friends/request body */
+export interface SendFriendRequestPayload {
+  toUserId: string;
+}
+
+// --- API Responses ---
+
+/** Paginated response wrapper */
+export interface PaginatedResponse<T> {
+  items: T[];
+  pagination: {
+    page: number;
+    limit: number;
+    total: number;
+    totalPages: number;
+  };
+}
+
+/** Cursor-based pagination for messages */
+export interface CursorPaginatedMessages {
+  items: Message[];
+  nextCursor: string | null;
+  limit: number;
+}
+
+/** GET /messages/conversation/:id params */
 export interface GetMessagesParams {
-  roomId: string;
-  roomModel: RoomModel;
-  page?: number;
+  conversationId: string;
   limit?: number;
-  before?: string; // ISO date-time, cho infinite scroll
+  cursor?: string;
 }
 
-/** Response từ GET /messages */
-export interface GetMessagesResponse {
-  status: string;
-  results: number;
-  total: number;
-  data: {
-    messages: Message[];
-  };
-}
-
-/** Thông tin phòng chat để hiển thị trên ChatListItem */
-export interface ChatRoom {
-  id: string;
-  name: string;
-  avatar?: string;
-  roomModel: RoomModel;
-  lastMessage?: {
-    content: string;
-    sender: string;
-    createdAt: string;
-    type: MessageType;
-  };
-  unreadCount: number;
-  members?: UserInfo[];
+/** Conversation list item for display */
+export interface ConversationListItem extends Conversation {
+  /** Computed display name for the conversation */
+  displayName?: string;
+  /** Computed avatar */
+  displayAvatar?: string | null;
 }

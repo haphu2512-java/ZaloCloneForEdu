@@ -35,7 +35,11 @@ const listMessagesByConversation = asyncHandler(async (req, res) => {
 
   await ensureConversationMember(conversationId, req.user._id);
 
-  const query = { conversationId };
+  const query = { 
+    conversationId,
+    deletedBy: { $ne: req.user._id } // Do not fetch messages deleted by this user
+  };
+  
   if (cursor) {
     const parsedCursor = decodeCursor(cursor);
     if (!parsedCursor) {
@@ -55,7 +59,8 @@ const listMessagesByConversation = asyncHandler(async (req, res) => {
     .sort({ createdAt: -1, _id: -1 })
     .limit(limit + 1)
     .populate('senderId', 'username avatarUrl')
-    .populate('replyTo');
+    .populate('replyTo')
+    .populate('forwardFrom');
 
   let nextCursor = null;
   let finalItems = messages;
@@ -99,23 +104,88 @@ const markMessageRead = asyncHandler(async (req, res) => {
   return successResponse(res, {}, 'Message marked as read');
 });
 
-const deleteMessage = asyncHandler(async (req, res) => {
+const deleteMessageForMe = asyncHandler(async (req, res) => {
+  // Xóa tin nhắn (thuộc về phía mình - "Delete for me")
+  const message = await Message.findById(req.params.id);
+  if (!message) {
+    throw new ApiError(404, 'MESSAGE_NOT_FOUND', 'Message not found');
+  }
+
+  await ensureConversationMember(message.conversationId, req.user._id);
+  
+  // Save user _id to deletedBy array
+  if (!message.deletedBy.includes(req.user._id)) {
+    message.deletedBy.push(req.user._id);
+    await message.save();
+  }
+
+  return successResponse(res, {}, 'Message deleted for you');
+});
+
+const recallMessage = asyncHandler(async (req, res) => {
+  // Thu hồi tin nhắn (với mọi người - "Recall/Unsend")
   const message = await Message.findById(req.params.id);
   if (!message) {
     throw new ApiError(404, 'MESSAGE_NOT_FOUND', 'Message not found');
   }
 
   if (!message.senderId.equals(req.user._id)) {
-    throw new ApiError(403, 'FORBIDDEN', 'Only sender can delete this message');
+    throw new ApiError(403, 'FORBIDDEN', 'Only sender can recall this message');
   }
 
-  await Message.findByIdAndDelete(message._id);
-  return successResponse(res, {}, 'Message deleted');
+  message.isRecalled = true;
+  await message.save();
+
+  socketService.emitToConversation(message.conversationId.toString(), 'message_recalled', {
+    messageId: message._id,
+    conversationId: message.conversationId,
+  });
+
+  return successResponse(res, message, 'Message recalled successfully');
+});
+
+const reactToMessage = asyncHandler(async (req, res) => {
+  const { emoji } = req.body;
+  const message = await Message.findById(req.params.id);
+  if (!message) {
+    throw new ApiError(404, 'MESSAGE_NOT_FOUND', 'Message not found');
+  }
+
+  await ensureConversationMember(message.conversationId, req.user._id);
+
+  // Check if reaction exists
+  const existingReactionIndex = message.reactions.findIndex(
+    (r) => r.userId.toString() === req.user._id.toString()
+  );
+
+  if (existingReactionIndex >= 0) {
+    if (emoji) {
+      // Update emoji
+      message.reactions[existingReactionIndex].emoji = emoji;
+    } else {
+      // Remove reaction if no emoji is provided
+      message.reactions.splice(existingReactionIndex, 1);
+    }
+  } else if (emoji) {
+    // Add new reaction
+    message.reactions.push({ userId: req.user._id, emoji });
+  }
+
+  await message.save();
+
+  socketService.emitToConversation(message.conversationId.toString(), 'message_reacted', {
+    messageId: message._id,
+    reactions: message.reactions,
+  });
+
+  return successResponse(res, message.reactions, 'Reaction updated');
 });
 
 module.exports = {
   sendMessage,
   listMessagesByConversation,
   markMessageRead,
-  deleteMessage,
+  deleteMessage: deleteMessageForMe,
+  recallMessage,
+  reactToMessage,
 };

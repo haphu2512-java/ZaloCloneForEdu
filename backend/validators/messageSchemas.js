@@ -21,9 +21,14 @@ const messagePaginationQuerySchema = z.object({
   cursor: z.string().trim().optional(),
 });
 
+const reactMessageSchema = z.object({
+  emoji: z.string().trim().optional(),
+});
+
 module.exports = {
   sendMessageSchema,
   conversationParamSchema,
   messageIdParamSchema,
   messagePaginationQuerySchema,
+  reactMessageSchema,
 };

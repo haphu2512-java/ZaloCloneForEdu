@@ -67,18 +67,9 @@ export default function TabLayout() {
         }}
       />
       <Tabs.Screen
-        name="classes"
+        name="contacts"
         options={{
-          title: 'Lớp học',
-          tabBarIcon: ({ color, focused }) => (
-            <TabBarIcon name={focused ? 'school' : 'school-outline'} color={color} />
-          ),
-        }}
-      />
-      <Tabs.Screen
-        name="groups"
-        options={{
-          title: 'Nhóm',
+          title: 'Danh bạ',
           tabBarIcon: ({ color, focused }) => (
             <TabBarIcon name={focused ? 'people' : 'people-outline'} color={color} />
           ),

@@ -75,9 +75,11 @@ export const fetchAPI = async (endpoint: string, options: RequestInit = {}) => {
     }
 
     if (!response.ok) {
-      const err: any = new Error(data.message || 'Error executing request');
-      if (data.errorCode) err.errorCode = data.errorCode;
-      if (data.email) err.email = data.email;
+      // Backend error format: { success: false, error: { code, message } }
+      const errorInfo = data.error || {};
+      const err: any = new Error(errorInfo.message || data.message || 'Error executing request');
+      if (errorInfo.code) err.errorCode = errorInfo.code;
+      err.statusCode = response.status;
       throw err;
     }
 

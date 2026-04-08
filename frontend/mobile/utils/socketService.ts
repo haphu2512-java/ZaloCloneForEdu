@@ -3,6 +3,13 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Platform } from 'react-native';
 import Constants from 'expo-constants';
 
+// ============================================================
+// Socket Service - Kết nối Socket.IO với Backend
+// Backend events: join_conversation, send_message, typing,
+//   stop_typing, message_delivered, message_seen,
+//   new_message, user_online, user_offline
+// ============================================================
+
 // Derive the base socket URL (same logic as api.ts)
 const hostUri = Constants.expoConfig?.hostUri;
 const localhost = hostUri ? hostUri.split(':')[0] : '10.126.202.133';
@@ -57,6 +64,10 @@ export async function connectSocket(): Promise<Socket | null> {
       console.log('[Socket] Disconnected:', reason);
     });
 
+    socket.on('socket_error', (data) => {
+      console.warn('[Socket] Server error:', data.message);
+    });
+
     return socket;
   } catch (error) {
     console.error('[Socket] Failed to connect:', error);
@@ -83,29 +94,55 @@ export function disconnectSocket(): void {
 }
 
 /**
- * Join a chat room (class, group, or conversation).
+ * Join a conversation room.
+ * Backend event: 'join_conversation' { conversationId }
  */
-export function joinRoom(roomId: string): void {
-  socket?.emit('join:room', roomId);
+export function joinConversation(conversationId: string): void {
+  socket?.emit('join_conversation', { conversationId });
 }
 
 /**
- * Leave a chat room.
+ * Send a message via socket.
+ * Backend event: 'send_message' { conversationId, content, mediaIds?, replyTo?, forwardFrom? }
  */
-export function leaveRoom(roomId: string): void {
-  socket?.emit('leave:room', roomId);
+export function sendMessage(payload: {
+  conversationId: string;
+  content: string;
+  mediaIds?: string[];
+  replyTo?: string;
+  forwardFrom?: string;
+}): void {
+  socket?.emit('send_message', payload);
 }
 
 /**
- * Emit typing start event.
+ * Emit typing indicator.
+ * Backend event: 'typing' { conversationId }
  */
-export function emitTypingStart(roomId: string): void {
-  socket?.emit('typing:start', { roomId });
+export function emitTyping(conversationId: string): void {
+  socket?.emit('typing', { conversationId });
 }
 
 /**
- * Emit typing stop event.
+ * Emit stop typing indicator.
+ * Backend event: 'stop_typing' { conversationId }
  */
-export function emitTypingStop(roomId: string): void {
-  socket?.emit('typing:stop', { roomId });
+export function emitStopTyping(conversationId: string): void {
+  socket?.emit('stop_typing', { conversationId });
+}
+
+/**
+ * Notify server that a message has been delivered.
+ * Backend event: 'message_delivered' { messageId }
+ */
+export function emitMessageDelivered(messageId: string): void {
+  socket?.emit('message_delivered', { messageId });
+}
+
+/**
+ * Notify server that a message has been seen/read.
+ * Backend event: 'message_seen' { messageId }
+ */
+export function emitMessageSeen(messageId: string): void {
+  socket?.emit('message_seen', { messageId });
 }

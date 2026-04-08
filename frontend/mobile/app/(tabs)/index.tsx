@@ -9,25 +9,15 @@ import {
   ActivityIndicator,
   StyleSheet,
 } from 'react-native';
-import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
-import { fetchAPI } from '@/utils/api';
+import { getConversations } from '@/utils/messageService';
 import { useAuth } from '@/context/auth';
 import Colors from '@/constants/Colors';
 import { useColorScheme } from '@/components/useColorScheme';
+import type { Conversation } from '@/types/chat';
+import { useRouter } from 'expo-router';
 
-interface ConversationItem {
-  id: string;
-  _id: string;
-  name: string;
-  avatar?: string | null;
-  lastMessage: string;
-  time: string;
-  unreadCount: number;
-  roomModel: 'Conversation' | 'Class' | 'Group';
-}
-
-function formatTime(dateStr: string): string {
+function formatTime(dateStr?: string | null): string {
   if (!dateStr) return '';
   const date = new Date(dateStr);
   const now = new Date();
@@ -46,32 +36,41 @@ function formatTime(dateStr: string): string {
   return `${date.getDate()}/${date.getMonth() + 1}`;
 }
 
-function getRoomIcon(roomModel: string): { name: keyof typeof Ionicons.glyphMap; color: string } {
-  switch (roomModel) {
-    case 'Class':
-      return { name: 'school', color: '#F59E0B' };
-    case 'Group':
-      return { name: 'people', color: '#8B5CF6' };
-    default:
-      return { name: 'person', color: '#3B82F6' };
+/** Get display name for a conversation */
+function getDisplayName(conv: Conversation, currentUserId: string): string {
+  if (conv.type === 'group' && conv.name) return conv.name;
+  // For direct chats, show the other participant's username
+  const otherUser = conv.participants?.find((p) => p._id !== currentUserId);
+  return otherUser?.username || 'Cuộc trò chuyện';
+}
+
+/** Get display avatar for a conversation */
+function getDisplayAvatar(conv: Conversation, currentUserId: string): string {
+  if (conv.type === 'group') {
+    const name = conv.name || 'Group';
+    return `https://ui-avatars.com/api/?name=${encodeURIComponent(name)}&background=8B5CF6&color=fff&size=100&bold=true`;
   }
+  const otherUser = conv.participants?.find((p) => p._id !== currentUserId);
+  return (
+    otherUser?.avatarUrl ||
+    `https://ui-avatars.com/api/?name=${encodeURIComponent(otherUser?.username || 'U')}&background=6366F1&color=fff&size=100&bold=true`
+  );
 }
 
 export default function MessagesScreen() {
   const colorScheme = useColorScheme() ?? 'light';
   const colors = Colors[colorScheme];
-  const router = useRouter();
   const { user } = useAuth();
 
-  const [conversations, setConversations] = useState<ConversationItem[]>([]);
+  const [conversations, setConversations] = useState<Conversation[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
 
   const loadConversations = useCallback(async () => {
     try {
-      const res = await fetchAPI('/conversations');
-      if (res?.data?.conversations) {
-        setConversations(res.data.conversations);
+      const res = await getConversations(1, 50);
+      if (res?.items) {
+        setConversations(res.items);
       }
     } catch (error: any) {
       console.log('Failed to fetch conversations:', error.message);
@@ -93,79 +92,71 @@ export default function MessagesScreen() {
     setRefreshing(false);
   }, [loadConversations]);
 
-  const handlePress = (item: ConversationItem) => {
-    router.push({
-      pathname: '/chat/[id]' as any,
-      params: {
-        id: item._id || item.id,
-        name: item.name,
-        avatar: item.avatar || '',
-        roomModel: item.roomModel,
-      },
-    });
+  const router = useRouter();
+
+  const handlePress = (item: Conversation) => {
+    router.push(`/chat/${item._id}`);
   };
 
-  const renderItem = ({ item }: { item: ConversationItem }) => {
-    const roomIcon = getRoomIcon(item.roomModel);
-    const hasUnread = item.unreadCount > 0;
+  const renderItem = ({ item }: { item: Conversation }) => {
+    const currentUserId = user?.id || '';
+    const displayName = getDisplayName(item, currentUserId);
+    const displayAvatar = getDisplayAvatar(item, currentUserId);
+    const isGroup = item.type === 'group';
+    const latestMsg = item.latestMessage;
+    const lastMessageText = latestMsg?.content || 'Chưa có tin nhắn';
+    const lastMessageTime = latestMsg?.createdAt || item.lastMessageAt;
+    const senderName = latestMsg?.senderId?.username;
+
+    // Check if the other user is online (for direct chats)
+    const otherUser = !isGroup
+      ? item.participants?.find((p) => p._id !== currentUserId)
+      : null;
+    const isOnline = otherUser?.isOnline;
 
     return (
       <TouchableOpacity
-        style={[styles.chatItem, { backgroundColor: hasUnread ? colors.secondaryBackground : colors.surface }]}
+        style={[styles.chatItem, { backgroundColor: colors.surface }]}
         onPress={() => handlePress(item)}
         activeOpacity={0.7}
       >
         {/* Avatar */}
         <View style={styles.avatarWrapper}>
           <Image
-            source={{
-              uri: item.avatar || `https://ui-avatars.com/api/?name=${encodeURIComponent(item.name)}&background=6366F1&color=fff&size=100&bold=true`,
-            }}
+            source={{ uri: displayAvatar }}
             style={styles.avatar}
           />
-          {/* Room type badge */}
-          <View style={[styles.roomBadge, { backgroundColor: roomIcon.color }]}>
-            <Ionicons name={roomIcon.name} size={10} color="#fff" />
-          </View>
+          {/* Online indicator */}
+          {isOnline && (
+            <View style={[styles.onlineDot, { borderColor: colors.surface }]} />
+          )}
+          {/* Group badge */}
+          {isGroup && (
+            <View style={[styles.roomBadge, { backgroundColor: '#8B5CF6' }]}>
+              <Ionicons name="people" size={10} color="#fff" />
+            </View>
+          )}
         </View>
 
         {/* Content */}
         <View style={styles.chatContent}>
           <View style={styles.chatTopRow}>
             <Text
-              style={[
-                styles.chatName,
-                { color: colors.text, fontWeight: hasUnread ? '700' : '600' },
-              ]}
+              style={[styles.chatName, { color: colors.text }]}
               numberOfLines={1}
             >
-              {item.name}
+              {displayName}
             </Text>
-            <Text style={[styles.chatTime, { color: hasUnread ? colors.tint : colors.muted }]}>
-              {formatTime(item.time)}
+            <Text style={[styles.chatTime, { color: colors.muted }]}>
+              {formatTime(lastMessageTime)}
             </Text>
           </View>
-          <View style={styles.chatBottomRow}>
-            <Text
-              style={[
-                styles.chatMessage,
-                {
-                  color: hasUnread ? colors.text : colors.muted,
-                  fontWeight: hasUnread ? '500' : '400',
-                },
-              ]}
-              numberOfLines={1}
-            >
-              {item.lastMessage || 'Chưa có tin nhắn'}
-            </Text>
-            {hasUnread && (
-              <View style={[styles.unreadBadge, { backgroundColor: colors.tint }]}>
-                <Text style={styles.unreadText}>
-                  {item.unreadCount > 99 ? '99+' : item.unreadCount}
-                </Text>
-              </View>
-            )}
-          </View>
+          <Text
+            style={[styles.chatMessage, { color: colors.muted }]}
+            numberOfLines={1}
+          >
+            {senderName && latestMsg ? `${senderName}: ${lastMessageText}` : lastMessageText}
+          </Text>
         </View>
       </TouchableOpacity>
     );
@@ -178,7 +169,7 @@ export default function MessagesScreen() {
       </View>
       <Text style={[styles.emptyTitle, { color: colors.text }]}>Chưa có cuộc trò chuyện</Text>
       <Text style={[styles.emptySubtitle, { color: colors.muted }]}>
-        Hãy tham gia lớp học hoặc nhóm để bắt đầu trò chuyện
+        Hãy thêm bạn bè để bắt đầu trò chuyện
       </Text>
     </View>
   );
@@ -196,7 +187,7 @@ export default function MessagesScreen() {
     <View style={[styles.container, { backgroundColor: colors.background }]}>
       <FlatList
         data={conversations}
-        keyExtractor={(item) => item._id || item.id}
+        keyExtractor={(item) => item._id}
         renderItem={renderItem}
         ListEmptyComponent={renderEmpty}
         refreshControl={
@@ -224,6 +215,16 @@ const styles = StyleSheet.create({
   },
   avatarWrapper: { position: 'relative', marginRight: 14 },
   avatar: { width: 54, height: 54, borderRadius: 27 },
+  onlineDot: {
+    position: 'absolute',
+    bottom: 1,
+    right: 1,
+    width: 14,
+    height: 14,
+    borderRadius: 7,
+    backgroundColor: '#10B981',
+    borderWidth: 2,
+  },
   roomBadge: {
     position: 'absolute',
     bottom: -1,
@@ -239,19 +240,9 @@ const styles = StyleSheet.create({
 
   chatContent: { flex: 1 },
   chatTopRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 },
-  chatName: { fontSize: 16, flex: 1, marginRight: 8 },
+  chatName: { fontSize: 16, fontWeight: '600', flex: 1, marginRight: 8 },
   chatTime: { fontSize: 12 },
-  chatBottomRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
-  chatMessage: { fontSize: 14, flex: 1, marginRight: 8 },
-  unreadBadge: {
-    minWidth: 20,
-    height: 20,
-    borderRadius: 10,
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingHorizontal: 6,
-  },
-  unreadText: { color: '#fff', fontSize: 11, fontWeight: '700' },
+  chatMessage: { fontSize: 14 },
 
   emptyContainer: { flex: 1, justifyContent: 'center', alignItems: 'center', paddingHorizontal: 40 },
   emptyIcon: { width: 96, height: 96, borderRadius: 48, alignItems: 'center', justifyContent: 'center', marginBottom: 20 },

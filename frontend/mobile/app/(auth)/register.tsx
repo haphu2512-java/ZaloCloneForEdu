@@ -9,18 +9,16 @@ import {
   Platform,
   SafeAreaView,
   ActivityIndicator,
-  Alert,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { Link, useRouter } from 'expo-router';
 import { useAuth } from '../../context/auth';
 
 export default function RegisterScreen() {
-  const router = useRouter();
   const { register } = useAuth();
+  const router = useRouter();
 
-  const [fullName, setFullName] = useState('');
-  const [email, setEmail] = useState('');
+  const [identifier, setIdentifier] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
@@ -29,8 +27,8 @@ export default function RegisterScreen() {
   const [errorMsg, setErrorMsg] = useState('');
 
   const handleRegister = async () => {
-    if (!fullName || !email || !password || !confirmPassword) {
-      setErrorMsg('Vui lòng nhập đầy đủ thông tin');
+    if (!identifier || !password || !confirmPassword) {
+      setErrorMsg('Vui lòng nhập đầy đủ email/SĐT và mật khẩu');
       return;
     }
     if (password.length < 6) {
@@ -45,22 +43,16 @@ export default function RegisterScreen() {
     setErrorMsg('');
     setIsSubmitting(true);
     try {
-      await register({ fullName: fullName.trim(), email: email.trim(), password });
-      Alert.alert(
-        'Đăng ký thành công! 🎉',
-        'Vui lòng xác thực email trước khi đăng nhập.',
-        [
-          {
-            text: 'Xác thực Email',
-            onPress: () => router.push({ pathname: '/(auth)/verify-email' as any, params: { email: email.trim() } }),
-          },
-          {
-            text: 'Về Đăng Nhập',
-            style: 'cancel',
-            onPress: () => router.replace('/(auth)/login' as any),
-          },
-        ]
-      );
+      const isEmail = identifier.includes('@');
+      await register({
+        email: isEmail ? identifier.trim() : undefined,
+        phone: !isEmail ? identifier.trim() : undefined,
+        password,
+      });
+      // Nếu đăng ký email thì sang xác thực, SĐT hoặc thành công thì tự động Context đẩy về (tabs)
+      if (isEmail) {
+        router.navigate('/(auth)/verify-email');
+      }
     } catch (err: any) {
       setErrorMsg(err.message || 'Đăng ký thất bại');
     } finally {
@@ -96,7 +88,7 @@ export default function RegisterScreen() {
               Tạo tài khoản
             </Text>
             <Text style={{ color: '#64748B', marginTop: 8, fontSize: 16, lineHeight: 24 }}>
-              Bắt đầu hành trình học tập cùng Zalo Edu
+              Kết nối và nhắn tin cùng bạn bè
             </Text>
           </View>
 
@@ -111,38 +103,20 @@ export default function RegisterScreen() {
               </View>
             ) : null}
 
-            {/* Full Name */}
-            <View style={getFieldStyle('fullName')}>
-              <Ionicons
-                name="person-outline" size={20}
-                color={focusedField === 'fullName' ? '#6366F1' : '#94A3B8'}
-              />
-              <TextInput
-                placeholder="Họ và tên"
-                value={fullName}
-                onChangeText={setFullName}
-                style={{ flex: 1, marginLeft: 12, fontSize: 16, color: '#0F172A' }}
-                placeholderTextColor="#94A3B8"
-                onFocus={() => setFocusedField('fullName')}
-                onBlur={() => setFocusedField(null)}
-              />
-            </View>
-
-            {/* Email */}
-            <View style={getFieldStyle('email')}>
+            {/* Email/Phone */}
+            <View style={getFieldStyle('identifier')}>
               <Ionicons
                 name="mail-outline" size={20}
-                color={focusedField === 'email' ? '#6366F1' : '#94A3B8'}
+                color={focusedField === 'identifier' ? '#6366F1' : '#94A3B8'}
               />
               <TextInput
-                placeholder="Email"
-                value={email}
-                onChangeText={setEmail}
-                keyboardType="email-address"
+                placeholder="Email hoặc Số điện thoại *"
+                value={identifier}
+                onChangeText={setIdentifier}
                 autoCapitalize="none"
                 style={{ flex: 1, marginLeft: 12, fontSize: 16, color: '#0F172A' }}
                 placeholderTextColor="#94A3B8"
-                onFocus={() => setFocusedField('email')}
+                onFocus={() => setFocusedField('identifier')}
                 onBlur={() => setFocusedField(null)}
               />
             </View>
@@ -154,7 +128,7 @@ export default function RegisterScreen() {
                 color={focusedField === 'password' ? '#6366F1' : '#94A3B8'}
               />
               <TextInput
-                placeholder="Mật khẩu (ít nhất 6 ký tự)"
+                placeholder="Mật khẩu (ít nhất 6 ký tự) *"
                 value={password}
                 onChangeText={setPassword}
                 secureTextEntry={!showPassword}
@@ -179,7 +153,7 @@ export default function RegisterScreen() {
                 color={focusedField === 'confirmPassword' ? '#6366F1' : '#94A3B8'}
               />
               <TextInput
-                placeholder="Xác nhận mật khẩu"
+                placeholder="Xác nhận mật khẩu *"
                 value={confirmPassword}
                 onChangeText={setConfirmPassword}
                 secureTextEntry={!showPassword}
@@ -188,30 +162,6 @@ export default function RegisterScreen() {
                 onFocus={() => setFocusedField('confirmPassword')}
                 onBlur={() => setFocusedField(null)}
               />
-            </View>
-
-            {/* Password strength */}
-            <View style={{ marginBottom: 8, marginTop: -8, height: 20 }}>
-              {password.length > 0 && (
-                <View>
-                  <View style={{ flexDirection: 'row', gap: 4, marginBottom: 4 }}>
-                    {[1, 2, 3, 4].map((level) => (
-                      <View
-                        key={level}
-                        style={{
-                          flex: 1, height: 3, borderRadius: 2,
-                          backgroundColor: password.length >= level * 3
-                            ? level <= 1 ? '#EF4444' : level <= 2 ? '#F59E0B' : level <= 3 ? '#3B82F6' : '#10B981'
-                            : '#E2E8F0',
-                        }}
-                      />
-                    ))}
-                  </View>
-                  <Text style={{ color: '#94A3B8', fontSize: 12 }}>
-                    {password.length < 6 ? 'Quá ngắn' : password.length < 8 ? 'Trung bình' : password.length < 12 ? 'Mạnh' : 'Rất mạnh'}
-                  </Text>
-                </View>
-              )}
             </View>
 
             {/* Register Button */}

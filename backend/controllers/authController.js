@@ -1,3 +1,4 @@
+const crypto = require('node:crypto');
 const bcrypt = require('bcryptjs');
 
 const User = require('../models/User');
@@ -5,6 +6,7 @@ const asyncHandler = require('../utils/asyncHandler');
 const ApiError = require('../utils/apiError');
 const { successResponse } = require('../utils/apiResponse');
 const { issueTokenPair, rotateRefreshToken, revokeAllSessions, revokeRefreshToken } = require('../services/authService');
+const { sendEmail } = require('../utils/email');
 
 const toAuthPayload = (user, tokens) => ({
   user: user.toJSON(),
@@ -12,33 +14,70 @@ const toAuthPayload = (user, tokens) => ({
   refreshToken: tokens.refreshToken,
 });
 
+const generateUsername = (identifier) => {
+  const base = identifier.split('@')[0].replace(/[^a-zA-Z0-9]/g, '').toLowerCase();
+  return `${base}_${crypto.randomBytes(3).toString('hex')}`;
+};
+
 const register = asyncHandler(async (req, res) => {
   const { username, email, password, phone } = req.body;
-  const duplicated = await User.findOne({
-    $or: [{ email: email.toLowerCase() }, { username }],
-  });
+  
+  const query = [];
+  if (email) query.push({ email: email.toLowerCase() });
+  if (phone) query.push({ phone });
+  if (username) query.push({ username });
 
-  if (duplicated) {
-    throw new ApiError(409, 'USER_EXISTS', 'Email or username already exists');
+  if (query.length > 0) {
+    const duplicated = await User.findOne({ $or: query });
+    if (duplicated) {
+      if (email && duplicated.email === email.toLowerCase()) throw new ApiError(409, 'EMAIL_EXISTS', 'Email already exists');
+      if (phone && duplicated.phone === phone) throw new ApiError(409, 'PHONE_EXISTS', 'Phone already exists');
+      if (username && duplicated.username === username) throw new ApiError(409, 'USERNAME_EXISTS', 'Username already exists');
+    }
   }
 
+  const finalUsername = username || generateUsername(email || phone || 'user');
   const passwordHash = await bcrypt.hash(password, 10);
+  
+  // Verification token for email
+  let emailVerificationToken = null;
+  let emailVerificationExpires = null;
+  if (email) {
+    emailVerificationToken = crypto.randomBytes(32).toString('hex');
+    emailVerificationExpires = new Date(Date.now() + 24 * 60 * 60 * 1000); // 24 hours
+  }
+
   const user = await User.create({
-    username,
-    email: email.toLowerCase(),
+    username: finalUsername,
+    email: email ? email.toLowerCase() : undefined,
     passwordHash,
     phone: phone || null,
+    emailVerificationToken,
+    emailVerificationExpires,
   });
 
-  const tokens = await issueTokenPair(user);
+  if (email) {
+    await sendEmail({
+      to: email,
+      subject: 'Verify your email for Zalo Clone',
+      html: `<p>Your verification token is: <strong>${emailVerificationToken}</strong></p><p>Use this in the app to verify your email.</p>`
+    }).catch(err => console.error('Failed to send verification email', err));
+  }
 
+  const tokens = await issueTokenPair(user);
   return successResponse(res, toAuthPayload(user, tokens), 'Register success', 201);
 });
 
 const login = asyncHandler(async (req, res) => {
-  const { email, username, password } = req.body;
-  const where = email ? { email: email.toLowerCase() } : { username };
-  const user = await User.findOne(where);
+  const { email, username, phone, password } = req.body;
+  
+  const query = [];
+  if (email) query.push({ email: email.toLowerCase() });
+  if (username) query.push({ username });
+  if (phone) query.push({ phone });
+
+  const user = await User.findOne({ $or: query });
+  
   if (!user || user.deletedAt) {
     throw new ApiError(401, 'INVALID_CREDENTIALS', 'Invalid credentials');
   }
@@ -49,7 +88,6 @@ const login = asyncHandler(async (req, res) => {
   }
 
   const tokens = await issueTokenPair(user);
-
   return successResponse(res, toAuthPayload(user, tokens), 'Login success');
 });
 
@@ -74,10 +112,108 @@ const logoutAll = asyncHandler(async (req, res) => {
   return successResponse(res, {}, 'Logged out from all devices');
 });
 
+const verifyEmail = asyncHandler(async (req, res) => {
+  const { token } = req.body;
+  
+  const user = await User.findOne({
+    emailVerificationToken: token,
+    emailVerificationExpires: { $gt: Date.now() }
+  });
+
+  if (!user) {
+    throw new ApiError(400, 'INVALID_TOKEN', 'Verification token is invalid or has expired');
+  }
+
+  user.isEmailVerified = true;
+  user.emailVerificationToken = undefined;
+  user.emailVerificationExpires = undefined;
+  await user.save();
+
+  return successResponse(res, {}, 'Email verified successfully');
+});
+
+const forgotPassword = asyncHandler(async (req, res) => {
+  const { email, phone } = req.body;
+  
+  const query = [];
+  if (email) query.push({ email: email.toLowerCase() });
+  if (phone) query.push({ phone });
+
+  const user = await User.findOne({ $or: query });
+
+  if (!user) {
+    // Return success to not leak email existence
+    return successResponse(res, {}, 'If your account exists, a reset instruction has been sent');
+  }
+
+  const resetToken = crypto.randomBytes(32).toString('hex');
+  user.resetPasswordToken = crypto.createHash('sha256').update(resetToken).digest('hex');
+  user.resetPasswordExpires = new Date(Date.now() + 10 * 60 * 1000); // 10 minutes
+
+  await user.save();
+
+  if (email) {
+    await sendEmail({
+      to: user.email,
+      subject: 'Password Reset Request',
+      text: `You requested a password reset. Your reset token is: ${resetToken}\nUse this in the app. Token expires in 10 minutes.`,
+    });
+  } else if (phone) {
+    // Implement SMS sending here or log
+    console.log(`[SMS MOCK] To ${user.phone}: Your password reset token is ${resetToken}`);
+  }
+
+  return successResponse(res, {}, 'If your account exists, a reset instruction has been sent');
+});
+
+const resetPassword = asyncHandler(async (req, res) => {
+  const { token, newPassword } = req.body;
+
+  const hashedToken = crypto.createHash('sha256').update(token).digest('hex');
+
+  const user = await User.findOne({
+    resetPasswordToken: hashedToken,
+    resetPasswordExpires: { $gt: Date.now() }
+  });
+
+  if (!user) {
+    throw new ApiError(400, 'INVALID_TOKEN', 'Token is invalid or has expired');
+  }
+
+  user.passwordHash = await bcrypt.hash(newPassword, 10);
+  user.resetPasswordToken = undefined;
+  user.resetPasswordExpires = undefined;
+  // Increase token version to invalidate all existing sessions
+  user.tokenVersion += 1;
+  await user.save();
+
+  return successResponse(res, {}, 'Password reset successfully. Please login again.');
+});
+
+const changePassword = asyncHandler(async (req, res) => {
+  const { currentPassword, newPassword } = req.body;
+  const user = await User.findById(req.user._id);
+  
+  if (!user) throw new ApiError(404, 'USER_NOT_FOUND', 'User not found');
+
+  const isValid = await bcrypt.compare(currentPassword, user.passwordHash);
+  if (!isValid) throw new ApiError(400, 'INVALID_PASSWORD', 'Current password is wrong');
+
+  user.passwordHash = await bcrypt.hash(newPassword, 10);
+  user.tokenVersion += 1;
+  await user.save();
+
+  return successResponse(res, {}, 'Password changed successfully');
+});
+
 module.exports = {
   register,
   login,
   refreshToken,
   logout,
   logoutAll,
+  verifyEmail,
+  forgotPassword,
+  resetPassword,
+  changePassword
 };

@@ -41,16 +41,24 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const segments = useSegments();
   const router = useRouter();
 
-  // Khởi chạy App: Check xem token còn sống không
+  // Khởi chạy App: Load cached user & try refresh token
   useEffect(() => {
     const loadUser = async () => {
       try {
         const token = await authService.getToken();
         if (token) {
-          const res = await authService.getMe();
-          if (res.success && res.data) {
-            setUser(res.data);
-          } else {
+          // Load cached user info first for instant UX
+          const cachedUser = await authService.getCachedUserInfo();
+          if (cachedUser) {
+            setUser(cachedUser);
+          }
+
+          // Try to refresh token to validate session is still active
+          const refreshResult = await authService.refreshAccessToken();
+          if (refreshResult?.success && refreshResult.user) {
+            setUser(refreshResult.user);
+          } else if (!cachedUser) {
+            // No cached user and failed to refresh — session expired
             await authService.removeToken();
             setUser(null);
           }
@@ -84,15 +92,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const login = async (payload: LoginPayload) => {
     const res = await authService.login(payload);
-    if (!res.user) throw new Error(res.message || 'Lỗi đăng nhập');
+    if (!res.user) throw new Error('Đăng nhập thất bại');
     setUser(res.user);
   };
 
   const register = async (payload: RegisterPayload) => {
     const res = await authService.register(payload);
-    if (!res.success) throw new Error(res.message || 'Lỗi đăng ký');
-    // Note: Do not `setUser()` here. Mobile flow now strictly requires user to Verify Email
-    // and manually log in to get the JWT Token, unifying security standard with Web app.
+    if (!res.user) throw new Error('Đăng ký thất bại');
+    // Backend trả về token + user ngay sau register, auto login
+    setUser(res.user);
   };
 
   const logout = async () => {
@@ -102,18 +110,21 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   /** Cập nhật profile cho user hiện tại */
   const updateUser = async (data: UpdateProfilePayload) => {
-    const res = await authService.updateProfile(data);
-    if (res.success && res.data) {
-      setUser(res.data);
+    if (!user) throw new Error('Chưa đăng nhập');
+    const updatedUser = await authService.updateProfile(user.id, data);
+    if (updatedUser) {
+      setUser(updatedUser);
     }
   };
 
   /** Refresh lại thông tin user từ server */
   const refreshUser = async () => {
+    if (!user) return;
     try {
-      const res = await authService.getMe();
-      if (res.success && res.data) {
-        setUser(res.data);
+      const freshUser = await authService.getUserById(user.id);
+      if (freshUser) {
+        setUser(freshUser);
+        await authService.storeUserInfo(freshUser);
       }
     } catch (error) {
       console.warn('Failed to refresh user:', error);

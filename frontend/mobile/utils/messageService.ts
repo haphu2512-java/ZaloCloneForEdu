@@ -1,84 +1,137 @@
 import { fetchAPI } from './api';
 import type {
-  GetMessagesParams,
-  GetMessagesResponse,
-  SendMessagePayload,
-  UpdateMessagePayload,
-  AddReactionPayload,
   Message,
+  SendMessagePayload,
+  CursorPaginatedMessages,
+  GetMessagesParams,
+  Conversation,
+  CreateConversationPayload,
+  PaginatedResponse,
 } from '../types/chat';
 
 // ============================================================
-// Message Service - Tầng giao tiếp với Backend /messages API
+// Message & Conversation Service
+// Backend endpoints: /api/v1/messages/* and /api/v1/conversations/*
 // ============================================================
 
 const MESSAGES_ENDPOINT = '/messages';
+const CONVERSATIONS_ENDPOINT = '/conversations';
+
+// ==================== CONVERSATIONS ====================
 
 /**
- * Lấy danh sách tin nhắn theo phòng (hỗ trợ phân trang & infinite scroll)
- * GET /messages?roomId=...&roomModel=...&page=...&limit=...&before=...
+ * Lấy danh sách conversations của user hiện tại
+ * GET /conversations?page=&limit=
  */
-export async function getMessages(params: GetMessagesParams): Promise<GetMessagesResponse> {
+export async function getConversations(
+  page: number = 1,
+  limit: number = 20,
+): Promise<PaginatedResponse<Conversation>> {
+  const res = await fetchAPI(
+    `${CONVERSATIONS_ENDPOINT}?page=${page}&limit=${limit}`,
+  );
+  return res.data;
+}
+
+/**
+ * Tạo conversation mới (direct hoặc group)
+ * POST /conversations { type, name?, participantIds }
+ */
+export async function createConversation(
+  payload: CreateConversationPayload,
+): Promise<Conversation> {
+  const res = await fetchAPI(CONVERSATIONS_ENDPOINT, {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  });
+  return res.data;
+}
+
+// ==================== MESSAGES ====================
+
+/**
+ * Lấy danh sách tin nhắn theo conversation (cursor-based pagination)
+ * GET /messages/conversation/:id?limit=&cursor=
+ */
+export async function getMessages(
+  params: GetMessagesParams,
+): Promise<CursorPaginatedMessages> {
   const searchParams = new URLSearchParams();
-  searchParams.set('roomId', params.roomId);
-  searchParams.set('roomModel', params.roomModel);
-
-  if (params.page) searchParams.set('page', String(params.page));
   if (params.limit) searchParams.set('limit', String(params.limit));
-  if (params.before) searchParams.set('before', params.before);
+  if (params.cursor) searchParams.set('cursor', params.cursor);
 
-  return fetchAPI(`${MESSAGES_ENDPOINT}?${searchParams.toString()}`);
+  const queryStr = searchParams.toString();
+  const res = await fetchAPI(
+    `${MESSAGES_ENDPOINT}/conversation/${params.conversationId}${queryStr ? '?' + queryStr : ''}`,
+  );
+  return res.data;
 }
 
 /**
  * Gửi tin nhắn mới
- * POST /messages
+ * POST /messages/send { conversationId, content?, mediaIds?, replyTo?, forwardFrom? }
  */
-export async function sendMessage(payload: SendMessagePayload): Promise<{ status: string; data: { message: Message } }> {
-  return fetchAPI(MESSAGES_ENDPOINT, {
+export async function sendMessage(
+  payload: SendMessagePayload,
+): Promise<Message> {
+  const res = await fetchAPI(`${MESSAGES_ENDPOINT}/send`, {
     method: 'POST',
     body: JSON.stringify(payload),
   });
+  return res.data;
 }
 
 /**
- * Sửa nội dung tin nhắn (chỉ sender mới được sửa)
- * PUT /messages/:id
+ * Đánh dấu tin nhắn đã đọc
+ * PUT /messages/:id/read
  */
-export async function updateMessage(messageId: string, payload: UpdateMessagePayload): Promise<{ status: string; data: { message: Message } }> {
-  return fetchAPI(`${MESSAGES_ENDPOINT}/${messageId}`, {
+export async function markMessageRead(messageId: string): Promise<void> {
+  await fetchAPI(`${MESSAGES_ENDPOINT}/${messageId}/read`, {
     method: 'PUT',
-    body: JSON.stringify(payload),
   });
 }
 
 /**
- * Xóa tin nhắn (soft delete, chỉ sender hoặc admin)
+ * Xóa tin nhắn (Delete for me - xóa ẩn phía tôi)
  * DELETE /messages/:id
  */
-export async function deleteMessage(messageId: string): Promise<{ status: string }> {
-  return fetchAPI(`${MESSAGES_ENDPOINT}/${messageId}`, {
+export async function deleteMessage(messageId: string): Promise<void> {
+  await fetchAPI(`${MESSAGES_ENDPOINT}/${messageId}`, {
     method: 'DELETE',
   });
 }
 
 /**
- * Đánh dấu tin nhắn đã đọc
- * POST /messages/:id/read
+ * Thu hồi tin nhắn (Recall/Unsend - thu hồi với mọi người)
+ * PUT /messages/:id/recall
  */
-export async function markAsRead(messageId: string): Promise<{ status: string }> {
-  return fetchAPI(`${MESSAGES_ENDPOINT}/${messageId}/read`, {
-    method: 'POST',
+export async function recallMessage(messageId: string): Promise<Message> {
+  const res = await fetchAPI(`${MESSAGES_ENDPOINT}/${messageId}/recall`, {
+    method: 'PUT',
   });
+  return res.data;
 }
 
 /**
- * Thêm hoặc thay đổi reaction emoji
- * POST /messages/:id/reaction
+ * Thả cảm xúc tin nhắn (React)
+ * PUT /messages/:id/react { emoji?: string }
  */
-export async function addReaction(messageId: string, payload: AddReactionPayload): Promise<{ status: string; data: { message: Message } }> {
-  return fetchAPI(`${MESSAGES_ENDPOINT}/${messageId}/reaction`, {
+export async function reactToMessage(messageId: string, emoji?: string): Promise<any> {
+  const res = await fetchAPI(`${MESSAGES_ENDPOINT}/${messageId}/react`, {
+    method: 'PUT',
+    body: JSON.stringify({ emoji }),
+  });
+  return res.data;
+}
+
+/**
+ * Tải file/media
+ * POST /media/upload { fileName, mimeType, contentBase64 }
+ */
+export async function uploadMedia(payload: { fileName: string; mimeType: string; contentBase64: string }): Promise<any> {
+  const res = await fetchAPI('/media/upload', {
     method: 'POST',
     body: JSON.stringify(payload),
   });
+  return res.data;
 }

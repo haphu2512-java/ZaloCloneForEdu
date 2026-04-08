@@ -9,6 +9,7 @@ const {
   messageIdParamSchema,
   messagePaginationQuerySchema,
   sendMessageSchema,
+  reactMessageSchema,
 } = require('../validators/messageSchemas');
 
 const router = express.Router();
@@ -111,5 +112,9 @@ router.put('/:id/read', auth, validate({ params: messageIdParamSchema }), messag
  *         description: Message deleted
  */
 router.delete('/:id', auth, validate({ params: messageIdParamSchema }), messageController.deleteMessage);
+
+// New features
+router.put('/:id/recall', auth, validate({ params: messageIdParamSchema }), messageController.recallMessage);
+router.put('/:id/react', auth, validate({ params: messageIdParamSchema, body: reactMessageSchema }), messageController.reactToMessage);
 
 module.exports = router;
