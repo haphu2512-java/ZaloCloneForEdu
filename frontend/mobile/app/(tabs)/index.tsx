@@ -57,6 +57,12 @@ function getDisplayAvatar(conv: Conversation, currentUserId: string): string {
   );
 }
 
+function getSenderName(sender: any): string | undefined {
+  if (!sender) return undefined;
+  if (typeof sender === 'string') return undefined;
+  return sender.username;
+}
+
 export default function MessagesScreen() {
   const colorScheme = useColorScheme() ?? 'light';
   const colors = Colors[colorScheme];
@@ -106,7 +112,7 @@ export default function MessagesScreen() {
     const latestMsg = item.latestMessage;
     const lastMessageText = latestMsg?.content || 'Chưa có tin nhắn';
     const lastMessageTime = latestMsg?.createdAt || item.lastMessageAt;
-    const senderName = latestMsg?.senderId?.username;
+    const senderName = getSenderName(latestMsg?.senderId);
 
     // Check if the other user is online (for direct chats)
     const otherUser = !isGroup

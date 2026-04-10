@@ -92,3 +92,17 @@ export async function getFriendList(
     items: (res.data?.items || []).map(normalizeUser),
   };
 }
+
+/**
+ * Lấy danh sách lời mời kết bạn đến (pending)
+ * GET /friends/request/incoming?page=&limit=
+ */
+export async function getIncomingFriendRequests(
+  page: number = 1,
+  limit: number = 20,
+): Promise<PaginatedResponse<FriendRequest>> {
+  const res = await fetchAPI(
+    `${FRIENDS_ENDPOINT}/request/incoming?page=${page}&limit=${limit}`,
+  );
+  return res.data;
+}

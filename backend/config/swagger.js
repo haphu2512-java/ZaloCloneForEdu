@@ -118,7 +118,7 @@ const options = {
           type: 'object',
           required: ['token'],
           properties: {
-            token: { type: 'string', minLength: 10 },
+            token: { type: 'string', pattern: '^\\d{6}$', example: '123456' },
           },
         },
         ForgotPasswordInput: {

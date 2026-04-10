@@ -1,11 +1,16 @@
 const { z } = require('zod');
 
+const phoneSchema = z
+  .string()
+  .trim()
+  .regex(/^\+?\d{8,15}$/, 'Phone number is invalid');
+
 const registerSchema = z
   .object({
     username: z.string().trim().min(3).max(50).optional(),
     email: z.string().trim().email().optional(),
     password: z.string().min(6).max(100),
-    phone: z.string().trim().min(8).max(20).optional(),
+    phone: phoneSchema.optional(),
   })
   .refine((input) => input.email || input.phone, {
     message: 'Either email or phone is required',
@@ -15,7 +20,7 @@ const loginSchema = z
   .object({
     email: z.string().trim().email().optional(),
     username: z.string().trim().min(3).max(50).optional(),
-    phone: z.string().trim().min(8).max(20).optional(),
+    phone: phoneSchema.optional(),
     password: z.string().min(6).max(100),
   })
   .refine((input) => input.email || input.username || input.phone, {
@@ -29,7 +34,7 @@ const refreshSchema = z.object({
 const forgotPasswordSchema = z
   .object({
     email: z.string().trim().email().optional(),
-    phone: z.string().trim().min(8).max(20).optional(),
+    phone: phoneSchema.optional(),
   })
   .refine((input) => input.email || input.phone, {
     message: 'Either email or phone is required',
@@ -46,7 +51,7 @@ const changePasswordSchema = z.object({
 });
 
 const verifyEmailSchema = z.object({
-  token: z.string().min(10),
+  token: z.string().trim().regex(/^\d{6}$/, 'OTP must be 6 digits'),
 });
 
 module.exports = {

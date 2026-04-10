@@ -18,8 +18,10 @@ import Colors from '@/constants/Colors';
 import { useColorScheme } from '@/components/useColorScheme';
 import FontAwesome from '@expo/vector-icons/FontAwesome';
 import { Ionicons } from '@expo/vector-icons';
+import * as ImagePicker from 'expo-image-picker';
 import { useAuth } from '@/context/auth';
-import { changePassword } from '@/utils/authService';
+import { changePassword, resendVerificationEmail } from '@/utils/authService';
+import { uploadImageToCloudinary } from '@/utils/mediaService';
 import { useRouter } from 'expo-router';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
@@ -58,6 +60,7 @@ export default function ProfileScreen() {
   // Avatar URL input
   const [avatarUrl, setAvatarUrl] = useState('');
   const [isUploadingAvatar, setIsUploadingAvatar] = useState(false);
+  const [isResendingVerify, setIsResendingVerify] = useState(false);
 
   useEffect(() => {
     if (user) {
@@ -132,6 +135,51 @@ export default function ProfileScreen() {
       Alert.alert('Lỗi', error.message || 'Cập nhật ảnh thất bại');
     } finally {
       setIsUploadingAvatar(false);
+    }
+  };
+
+  const handlePickAvatarFromLibrary = async () => {
+    if (requireEmailVerification()) return;
+
+    const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (!permission.granted) {
+      Alert.alert('Lỗi', 'Bạn cần cấp quyền truy cập thư viện ảnh');
+      return;
+    }
+
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ImagePicker.MediaTypeOptions.Images,
+      allowsEditing: true,
+      quality: 0.85,
+    });
+
+    if (result.canceled || !result.assets?.length) return;
+
+    setIsUploadingAvatar(true);
+    try {
+      const localUri = result.assets[0].uri;
+      const uploadedUrl = await uploadImageToCloudinary(localUri);
+      await updateUser({ avatarUrl: uploadedUrl });
+      setAvatarUrl(uploadedUrl);
+      Alert.alert('Thành công', 'Đã cập nhật ảnh đại diện từ Cloudinary');
+    } catch (error: any) {
+      Alert.alert('Lỗi', error.message || 'Không thể tải ảnh lên Cloudinary');
+    } finally {
+      setIsUploadingAvatar(false);
+    }
+  };
+
+  const handleResendVerifyEmail = async () => {
+    if (!user?.email || user?.isEmailVerified) return;
+    setIsResendingVerify(true);
+    try {
+      await resendVerificationEmail();
+      Alert.alert('Thành công', 'Đã gửi lại OTP xác thực email');
+      router.push('/(auth)/verify-email' as any);
+    } catch (error: any) {
+      Alert.alert('Lỗi', error.message || 'Không thể gửi lại OTP');
+    } finally {
+      setIsResendingVerify(false);
     }
   };
 
@@ -280,6 +328,31 @@ export default function ProfileScreen() {
           colors={colors}
         />
       </View>
+
+      {!!user.email && !user.isEmailVerified && (
+        <View style={[styles.sectionContainer, { backgroundColor: '#FFF7ED', borderWidth: 1, borderColor: '#FDBA74' }]}>
+          <View style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingVertical: 14, gap: 10 }}>
+            <Ionicons name="warning-outline" size={20} color="#C2410C" />
+            <View style={{ flex: 1, backgroundColor: 'transparent' }}>
+              <Text style={{ color: '#9A3412', fontWeight: '700' }}>Email chưa xác thực</Text>
+              <Text style={{ color: '#C2410C', fontSize: 12, marginTop: 2 }}>
+                Bạn cần xác thực email để dùng đầy đủ tính năng tài khoản.
+              </Text>
+            </View>
+            <TouchableOpacity
+              onPress={handleResendVerifyEmail}
+              disabled={isResendingVerify}
+              style={{ backgroundColor: '#EA580C', borderRadius: 10, paddingHorizontal: 12, paddingVertical: 8 }}
+            >
+              {isResendingVerify ? (
+                <ActivityIndicator size="small" color="#fff" />
+              ) : (
+                <Text style={{ color: '#fff', fontWeight: '700', fontSize: 12 }}>Verify Email</Text>
+              )}
+            </TouchableOpacity>
+          </View>
+        </View>
+      )}
 
       {/* ==================== ACCOUNT SETTINGS ==================== */}
       <View style={[styles.sectionContainer, { backgroundColor: colors.surface }]}>
@@ -433,6 +506,24 @@ export default function ProfileScreen() {
                   style={[styles.passwordTextInput, { color: colors.text }]}
                 />
               </View>
+
+              <TouchableOpacity
+                onPress={handlePickAvatarFromLibrary}
+                disabled={isUploadingAvatar}
+                style={{
+                  backgroundColor: '#0EA5E9',
+                  borderRadius: 12,
+                  paddingVertical: 12,
+                  alignItems: 'center',
+                  marginBottom: 12,
+                }}
+              >
+                {isUploadingAvatar ? (
+                  <ActivityIndicator size="small" color="#fff" />
+                ) : (
+                  <Text style={{ color: '#fff', fontWeight: '700' }}>Chọn ảnh từ thư viện (Cloudinary)</Text>
+                )}
+              </TouchableOpacity>
 
               {/* Quick Avatars */}
               <Text style={[styles.inputLabel, { color: colors.text, marginTop: 8 }]}>Hoặc chọn avatar mẫu:</Text>

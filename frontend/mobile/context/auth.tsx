@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useEffect, useState } from 'react';
+﻿import React, { createContext, useContext, useEffect, useState } from 'react';
 import { useRouter, useSegments } from 'expo-router';
 import * as authService from '../utils/authService';
 import type { User, LoginPayload, RegisterPayload, UpdateProfilePayload } from '../types/auth';
@@ -30,8 +30,8 @@ export function useAuth() {
 }
 
 // ============================================================
-// AuthProvider - Quản lý trạng thái Current User toàn ứng dụng
-// Chặn User chưa đăng nhập vào ứng dụng
+// AuthProvider - Quáº£n lÃ½ tráº¡ng thÃ¡i Current User toÃ n á»©ng dá»¥ng
+// Cháº·n User chÆ°a Ä‘Äƒng nháº­p vÃ o á»©ng dá»¥ng
 // ============================================================
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
@@ -41,7 +41,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const segments = useSegments();
   const router = useRouter();
 
-  // Khởi chạy App: Load cached user & try refresh token
+  // Khá»Ÿi cháº¡y App: Load cached user & try refresh token
   useEffect(() => {
     const loadUser = async () => {
       try {
@@ -58,13 +58,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           if (refreshResult?.success && refreshResult.user) {
             setUser(refreshResult.user);
           } else if (!cachedUser) {
-            // No cached user and failed to refresh — session expired
+            // No cached user and failed to refresh â€” session expired
             await authService.removeToken();
             setUser(null);
           }
         }
       } catch (error) {
-        console.warn('Lỗi kiểm tra session:', error);
+        console.warn('Lá»—i kiá»ƒm tra session:', error);
         await authService.removeToken();
         setUser(null);
       } finally {
@@ -81,35 +81,27 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     const inAuthGroup = segments[0] === ('(auth)' as any);
     const currentAuthScreen = segments[1] as string | undefined;
     const requiresEmailVerification = Boolean(user?.email) && !user?.isEmailVerified;
+    const isVerifyScreen = currentAuthScreen === 'verify-email';
 
-    // Nếu chưa đăng nhập và cố vào (tabs) -> đá qua Login
     if (!user && !inAuthGroup) {
       router.replace('/(auth)/login' as any);
-    }
-    // Nếu đã đăng nhập nhưng chưa verify email, luôn ưu tiên màn verify-email.
-    else if (user && inAuthGroup) {
-      if (requiresEmailVerification && currentAuthScreen !== 'verify-email') {
-        router.replace('/(auth)/verify-email' as any);
-        return;
-      }
-      if (!requiresEmailVerification) {
+    } else if (user && inAuthGroup) {
+      if (!requiresEmailVerification && !isVerifyScreen) {
         router.replace('/(tabs)' as any);
       }
-    } else if (user && !inAuthGroup && requiresEmailVerification) {
-      router.replace('/(auth)/verify-email' as any);
     }
   }, [user, segments, isLoading]);
 
   const login = async (payload: LoginPayload) => {
     const res = await authService.login(payload);
-    if (!res.user) throw new Error('Đăng nhập thất bại');
+    if (!res.user) throw new Error('ÄÄƒng nháº­p tháº¥t báº¡i');
     setUser(res.user);
   };
 
   const register = async (payload: RegisterPayload) => {
     const res = await authService.register(payload);
-    if (!res.user) throw new Error('Đăng ký thất bại');
-    // Backend trả về token + user ngay sau register, auto login
+    if (!res.user) throw new Error('ÄÄƒng kÃ½ tháº¥t báº¡i');
+    // Backend tráº£ vá» token + user ngay sau register, auto login
     setUser(res.user);
   };
 
@@ -118,16 +110,16 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setUser(null);
   };
 
-  /** Cập nhật profile cho user hiện tại */
+  /** Cáº­p nháº­t profile cho user hiá»‡n táº¡i */
   const updateUser = async (data: UpdateProfilePayload) => {
-    if (!user) throw new Error('Chưa đăng nhập');
+    if (!user) throw new Error('ChÆ°a Ä‘Äƒng nháº­p');
     const updatedUser = await authService.updateProfile(user.id, data);
     if (updatedUser) {
       setUser(updatedUser);
     }
   };
 
-  /** Refresh lại thông tin user từ server */
+  /** Refresh láº¡i thÃ´ng tin user tá»« server */
   const refreshUser = async () => {
     if (!user) return;
     try {
@@ -147,3 +139,4 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     </AuthContext.Provider>
   );
 }
+

@@ -137,6 +137,19 @@ router.post('/logout-all', auth, authController.logoutAll);
 router.post('/verify-email', authLimiter, validate({ body: verifyEmailSchema }), authController.verifyEmail);
 /**
  * @openapi
+ * /auth/resend-verification:
+ *   post:
+ *     tags: [Auth]
+ *     summary: Resend email verification OTP for current user
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: Verification OTP sent
+ */
+router.post('/resend-verification', auth, authLimiter, authController.resendVerificationEmail);
+/**
+ * @openapi
  * /auth/forgot-password:
  *   post:
  *     tags: [Auth]

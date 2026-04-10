@@ -1,18 +1,48 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
-  View, Text, TextInput, TouchableOpacity, FlatList,
-  KeyboardAvoidingView, Platform, SafeAreaView, ActivityIndicator,
-  Alert, Image, ActionSheetIOS
+  View,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  FlatList,
+  KeyboardAvoidingView,
+  Platform,
+  SafeAreaView,
+  ActivityIndicator,
+  Alert,
+  ActionSheetIOS,
+  Modal,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { useLocalSearchParams, useRouter, Stack } from 'expo-router';
-import { useAuth } from '../../context/auth';
-import { getMessages, sendMessage, markMessageRead, deleteMessage, recallMessage } from '../../utils/messageService';
 import * as DocumentPicker from 'expo-document-picker';
-import { Message, ConversationListItem } from '../../types/chat';
+import { Stack, useLocalSearchParams, useRouter } from 'expo-router';
+import { useAuth } from '../../context/auth';
+import {
+  getMessages,
+  sendMessage,
+  deleteMessage,
+  recallMessage,
+  uploadMedia,
+  getConversations,
+} from '../../utils/messageService';
+import { connectSocket, getSocket, joinConversation } from '../../utils/socketService';
+import type { Message, Conversation } from '../../types/chat';
 
-function ChatScreen() {
-  const { id: conversationId } = useLocalSearchParams();
+const QUICK_EMOJIS = ['😀', '😂', '😍', '🥰', '👍', '❤️', '🔥', '😭', '🙏', '🎉'];
+
+function getMessageSenderId(msg: Message): string {
+  if (typeof msg.senderId === 'string') return msg.senderId;
+  return msg.senderId?._id || '';
+}
+
+function getConversationTitle(conv: Conversation, currentUserId: string) {
+  if (conv.type === 'group') return conv.name || 'Nhóm chat';
+  const otherUser = conv.participants?.find((p) => (p._id || p.id) !== currentUserId);
+  return otherUser?.username || 'Cuộc trò chuyện';
+}
+
+export default function ChatScreen() {
+  const { id: conversationId } = useLocalSearchParams<{ id: string }>();
   const router = useRouter();
   const { user } = useAuth();
 
@@ -22,15 +52,23 @@ function ChatScreen() {
   const [isSending, setIsSending] = useState(false);
   const [nextCursor, setNextCursor] = useState<string | null>(null);
   const [isFetchingMore, setIsFetchingMore] = useState(false);
+  const [isSocketReady, setIsSocketReady] = useState(false);
+  const [showEmojiPanel, setShowEmojiPanel] = useState(false);
+
+  const [forwardModalVisible, setForwardModalVisible] = useState(false);
+  const [forwardSource, setForwardSource] = useState<Message | null>(null);
+  const [conversations, setConversations] = useState<Conversation[]>([]);
+  const [isForwarding, setIsForwarding] = useState(false);
 
   const loadInitialMessages = useCallback(async () => {
     setIsLoading(true);
     try {
-      const res = await getMessages({ conversationId: conversationId as string, limit: 30 });
+      const res = await getMessages({ conversationId, limit: 30 });
       setMessages(res.items);
       setNextCursor(res.nextCursor);
     } catch (error) {
       console.log('Error loading messages', error);
+      Alert.alert('Lỗi', 'Không thể tải tin nhắn');
     } finally {
       setIsLoading(false);
     }
@@ -40,12 +78,71 @@ function ChatScreen() {
     loadInitialMessages();
   }, [loadInitialMessages]);
 
+  useEffect(() => {
+    let mounted = true;
+    let socketRef: any = null;
+
+    const setupSocket = async () => {
+      const socket = await connectSocket();
+      if (!mounted || !socket) return;
+      socketRef = socket;
+      joinConversation(conversationId);
+      setIsSocketReady(socket.connected);
+
+      const onConnect = () => {
+        setIsSocketReady(true);
+        joinConversation(conversationId);
+      };
+      const onDisconnect = () => setIsSocketReady(false);
+
+      const onNewMessage = (message: Message) => {
+        const messageConversationId =
+          typeof message.conversationId === 'string'
+            ? message.conversationId
+            : (message.conversationId as any)?._id;
+        if (messageConversationId !== conversationId) return;
+        setMessages((prev) => (prev.some((m) => m._id === message._id) ? prev : [message, ...prev]));
+      };
+
+      const onMessageRecalled = (payload: { messageId: string; conversationId: string }) => {
+        if (payload.conversationId !== conversationId) return;
+        setMessages((prev) =>
+          prev.map((m) => (m._id === payload.messageId ? { ...m, isRecalled: true } : m)),
+        );
+      };
+
+      socket.on('connect', onConnect);
+      socket.on('disconnect', onDisconnect);
+      socket.on('new_message', onNewMessage);
+      socket.on('message_recalled', onMessageRecalled);
+
+      return () => {
+        socket.off('connect', onConnect);
+        socket.off('disconnect', onDisconnect);
+        socket.off('new_message', onNewMessage);
+        socket.off('message_recalled', onMessageRecalled);
+      };
+    };
+
+    const cleanupPromise = setupSocket();
+    return () => {
+      mounted = false;
+      Promise.resolve(cleanupPromise).then((cleanup) => {
+        if (typeof cleanup === 'function') cleanup();
+      });
+      if (socketRef) {
+        socketRef.off('new_message');
+        socketRef.off('message_recalled');
+      }
+    };
+  }, [conversationId]);
+
   const loadMoreMessages = async () => {
     if (!nextCursor || isFetchingMore) return;
     setIsFetchingMore(true);
     try {
-      const res = await getMessages({ conversationId: conversationId as string, limit: 20, cursor: nextCursor });
-      setMessages(prev => [...prev, ...res.items]);
+      const res = await getMessages({ conversationId, limit: 20, cursor: nextCursor });
+      setMessages((prev) => [...prev, ...res.items]);
       setNextCursor(res.nextCursor);
     } catch (error) {
       console.log('Error loading more messages', error);
@@ -54,18 +151,29 @@ function ChatScreen() {
     }
   };
 
-  const handleSend = async () => {
+  const ensureConnectedBeforeChat = () => {
+    const socket = getSocket();
+    if (!socket || !socket.connected) {
+      Alert.alert('Đang kết nối', 'Vui lòng chờ kết nối chat được thiết lập rồi gửi lại.');
+      return false;
+    }
+    return true;
+  };
+
+  const handleSendText = async () => {
     const text = inputText.trim();
     if (!text) return;
+    if (!ensureConnectedBeforeChat()) return;
+
     setIsSending(true);
     try {
       const newMsg = await sendMessage({
-        conversationId: conversationId as string,
+        conversationId,
         content: text,
       });
-      // Optimistically add to UI, but usually socket will broadcast it back. Let's just prepend for responsiveness:
-      setMessages(prev => [newMsg, ...prev]);
+      setMessages((prev) => (prev.some((m) => m._id === newMsg._id) ? prev : [newMsg, ...prev]));
       setInputText('');
+      setShowEmojiPanel(false);
     } catch (error) {
       Alert.alert('Lỗi', 'Không thể gửi tin nhắn');
     } finally {
@@ -74,105 +182,147 @@ function ChatScreen() {
   };
 
   const handleDocumentPick = async () => {
+    if (!ensureConnectedBeforeChat()) return;
     try {
       const result = await DocumentPicker.getDocumentAsync({});
-      if (!result.canceled && result.assets && result.assets.length > 0) {
-        const asset = result.assets[0];
-        setIsSending(true);
-        try {
-          // Read to base64
-          const FileSystem = require('expo-file-system');
-          const base64 = await FileSystem.readAsStringAsync(asset.uri, {
-            encoding: FileSystem.EncodingType.Base64,
-          });
+      if (result.canceled || !result.assets?.length) return;
 
-          // Upload media
-          const { uploadMedia } = require('../../utils/messageService');
-          const media = await uploadMedia({
-            fileName: asset.name,
-            mimeType: asset.mimeType || 'application/octet-stream',
-            contentBase64: base64,
-          });
+      const asset = result.assets[0];
+      setIsSending(true);
 
-          // Send message
-          const newMsg = await sendMessage({
-            conversationId: conversationId as string,
-            mediaIds: [media._id],
-            content: `Đã gửi file: ${asset.name}`
-          });
-          setMessages(prev => [newMsg, ...prev]);
+      try {
+        const FileSystem = require('expo-file-system');
+        const base64 = await FileSystem.readAsStringAsync(asset.uri, {
+          encoding: FileSystem.EncodingType.Base64,
+        });
 
-        } catch (uploadErr) {
-          console.log(uploadErr);
-          Alert.alert('Lỗi', 'Không thể tải lên file');
-        } finally {
-          setIsSending(false);
-        }
+        const media = await uploadMedia({
+          fileName: asset.name,
+          mimeType: asset.mimeType || 'application/octet-stream',
+          contentBase64: base64,
+        });
+
+        const newMsg = await sendMessage({
+          conversationId,
+          mediaIds: [media._id],
+          content: `Đã gửi file: ${asset.name}`,
+        });
+        setMessages((prev) => (prev.some((m) => m._id === newMsg._id) ? prev : [newMsg, ...prev]));
+      } catch (uploadErr) {
+        console.log(uploadErr);
+        Alert.alert('Lỗi', 'Không thể tải lên file');
+      } finally {
+        setIsSending(false);
       }
     } catch (e) {
       console.log('Document picker err', e);
     }
   };
 
+  const openForwardModal = async (msg: Message) => {
+    try {
+      const res = await getConversations(1, 50);
+      const targets = (res.items || []).filter((c) => c._id !== conversationId);
+      setConversations(targets);
+      setForwardSource(msg);
+      setForwardModalVisible(true);
+    } catch (e) {
+      Alert.alert('Lỗi', 'Không thể tải danh sách cuộc trò chuyện');
+    }
+  };
+
+  const handleForward = async (targetConversationId: string) => {
+    if (!forwardSource) return;
+    setIsForwarding(true);
+    try {
+      const fallbackContent =
+        forwardSource.content?.trim() || (forwardSource.mediaIds?.length ? 'Tin nhắn được chuyển tiếp' : '');
+      await sendMessage({
+        conversationId: targetConversationId,
+        content: fallbackContent || 'Tin nhắn được chuyển tiếp',
+        mediaIds: forwardSource.mediaIds || [],
+        forwardFrom: forwardSource._id,
+      });
+      setForwardModalVisible(false);
+      setForwardSource(null);
+      Alert.alert('Thành công', 'Đã chuyển tiếp tin nhắn');
+    } catch (e: any) {
+      Alert.alert('Lỗi', e.message || 'Không thể chuyển tiếp');
+    } finally {
+      setIsForwarding(false);
+    }
+  };
+
   const handleMessageLongPress = (msg: Message) => {
-    const isMine = msg.senderId._id === user?.id || (msg.senderId as any) === user?.id; // backend might populate string or object
+    const isMine = getMessageSenderId(msg) === user?.id;
     const options = ['Hủy'];
-    const actions: Array<() => void> = [() => { }];
+    const actions: Array<() => void> = [() => {}];
 
     if (isMine && !msg.isRecalled) {
-      options.push('Thu hồi tin nhắn (với mọi người)');
+      options.push('Thu hồi tin nhắn');
       actions.push(async () => {
         try {
           await recallMessage(msg._id);
-          setMessages(prev => prev.map(m => m._id === msg._id ? { ...m, isRecalled: true } : m));
-        } catch (e) {
+          setMessages((prev) => prev.map((m) => (m._id === msg._id ? { ...m, isRecalled: true } : m)));
+        } catch (_e) {
           Alert.alert('Lỗi', 'Không thể thu hồi tin nhắn');
         }
       });
     }
 
     if (!msg.isRecalled) {
-      options.push('Xóa tin nhắn (phía tôi)');
+      options.push('Xóa tin nhắn phía tôi');
       actions.push(async () => {
         try {
           await deleteMessage(msg._id);
-          setMessages(prev => prev.filter(m => m._id !== msg._id));
-        } catch (e) {
+          setMessages((prev) => prev.filter((m) => m._id !== msg._id));
+        } catch (_e) {
           Alert.alert('Lỗi', 'Không thể xóa tin nhắn');
         }
       });
     }
 
-    // Add forward option
     if (!msg.isRecalled) {
-      options.push('Chuyển tiếp (Forward)');
+      options.push('Chuyển tiếp');
       actions.push(() => {
-        Alert.alert('Chuyển tiếp', 'Tính năng forward sẽ mở danh sách bạn bè.');
+        openForwardModal(msg);
       });
     }
 
     if (Platform.OS === 'ios') {
       ActionSheetIOS.showActionSheetWithOptions(
         { options, cancelButtonIndex: 0 },
-        (buttonIndex) => { actions[buttonIndex](); }
+        (buttonIndex) => {
+          actions[buttonIndex]();
+        },
       );
     } else {
-      // Very basic alert for Android since simple actions
-      Alert.alert('Tùy chọn tin nhắn', '', options.map((btn, idx) => ({
-        text: btn,
-        onPress: actions[idx],
-        style: idx === 0 ? 'cancel' : 'default'
-      })));
+      Alert.alert(
+        'Tùy chọn tin nhắn',
+        '',
+        options.map((btn, idx) => ({
+          text: btn,
+          onPress: actions[idx],
+          style: idx === 0 ? 'cancel' : 'default',
+        })),
+      );
     }
   };
 
   const renderMessage = ({ item }: { item: Message }) => {
-    const isMine = item.senderId._id === user?.id || (item.senderId as any) === user?.id;
+    const isMine = getMessageSenderId(item) === user?.id;
+    const senderName = typeof item.senderId === 'string' ? 'Khách' : item.senderId?.username || 'Khách';
 
     if (item.isRecalled) {
       return (
-        <View style={[{ padding: 10, marginVertical: 4, marginHorizontal: 16, borderRadius: 16, maxWidth: '75%' },
-        isMine ? { alignSelf: 'flex-end', backgroundColor: '#F1F5F9' } : { alignSelf: 'flex-start', backgroundColor: '#F1F5F9' }]}>
+        <View
+          style={[
+            { padding: 10, marginVertical: 4, marginHorizontal: 16, borderRadius: 16, maxWidth: '75%' },
+            isMine
+              ? { alignSelf: 'flex-end', backgroundColor: '#F1F5F9' }
+              : { alignSelf: 'flex-start', backgroundColor: '#F1F5F9' },
+          ]}
+        >
           <Text style={{ color: '#94A3B8', fontStyle: 'italic' }}>Tin nhắn đã bị thu hồi</Text>
         </View>
       );
@@ -181,14 +331,24 @@ function ChatScreen() {
     return (
       <TouchableOpacity
         onLongPress={() => handleMessageLongPress(item)}
-        activeOpacity={0.8}
+        activeOpacity={0.85}
         style={[
           { padding: 12, marginVertical: 4, marginHorizontal: 16, borderRadius: 16, maxWidth: '75%' },
-          isMine ? { alignSelf: 'flex-end', backgroundColor: '#3B82F6', borderBottomRightRadius: 4 } : { alignSelf: 'flex-start', backgroundColor: '#F1F5F9', borderBottomLeftRadius: 4 }
+          isMine
+            ? { alignSelf: 'flex-end', backgroundColor: '#3B82F6', borderBottomRightRadius: 4 }
+            : { alignSelf: 'flex-start', backgroundColor: '#F1F5F9', borderBottomLeftRadius: 4 },
         ]}
       >
-        {!isMine && <Text style={{ fontSize: 12, color: '#64748B', marginBottom: 4 }}>{item.senderId?.username || 'Khách'}</Text>}
+        {!isMine && <Text style={{ fontSize: 12, color: '#64748B', marginBottom: 4 }}>{senderName}</Text>}
+        {item.forwardFrom && (
+          <Text style={{ color: isMine ? '#DBEAFE' : '#64748B', fontSize: 12, marginBottom: 6 }}>Tin nhắn chuyển tiếp</Text>
+        )}
         {item.content ? <Text style={{ color: isMine ? '#fff' : '#0F172A', fontSize: 16 }}>{item.content}</Text> : null}
+        {!!item.mediaIds?.length && (
+          <Text style={{ marginTop: 6, color: isMine ? '#DBEAFE' : '#475569', fontSize: 12 }}>
+            Đính kèm {item.mediaIds.length} file
+          </Text>
+        )}
       </TouchableOpacity>
     );
   };
@@ -203,19 +363,31 @@ function ChatScreen() {
 
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: '#fff' }}>
-      <Stack.Screen options={{
-        title: 'Trò chuyện',
-        headerLeft: () => (
-          <TouchableOpacity onPress={() => router.back()} style={{ marginLeft: 8 }}>
-            <Ionicons name="arrow-back" size={24} color="#0F172A" />
-          </TouchableOpacity>
-        )
-      }} />
+      <Stack.Screen
+        options={{
+          title: 'Trò chuyện',
+          headerLeft: () => (
+            <TouchableOpacity onPress={() => router.back()} style={{ marginLeft: 8 }}>
+              <Ionicons name="arrow-back" size={24} color="#0F172A" />
+            </TouchableOpacity>
+          ),
+        }}
+      />
 
-      <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined} keyboardVerticalOffset={Platform.OS === 'ios' ? 90 : 0}>
+      {!isSocketReady && (
+        <View style={{ paddingVertical: 8, backgroundColor: '#FEF3C7', alignItems: 'center' }}>
+          <Text style={{ color: '#92400E', fontSize: 12 }}>Đang thiết lập kết nối chat...</Text>
+        </View>
+      )}
+
+      <KeyboardAvoidingView
+        style={{ flex: 1 }}
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        keyboardVerticalOffset={Platform.OS === 'ios' ? 90 : 0}
+      >
         <FlatList
           data={messages}
-          keyExtractor={item => item._id}
+          keyExtractor={(item) => item._id}
           renderItem={renderMessage}
           inverted
           onEndReached={loadMoreMessages}
@@ -223,32 +395,105 @@ function ChatScreen() {
           ListFooterComponent={isFetchingMore ? <ActivityIndicator style={{ margin: 16 }} /> : null}
         />
 
-        <View style={{ flexDirection: 'row', alignItems: 'center', padding: 12, borderTopWidth: 1, borderTopColor: '#E2E8F0', backgroundColor: '#F8FAFC' }}>
-          <TouchableOpacity onPress={handleDocumentPick} style={{ marginRight: 12 }}>
-            <Ionicons name="attach" size={28} color="#64748B" />
+        {showEmojiPanel && (
+          <View style={{ flexDirection: 'row', flexWrap: 'wrap', paddingHorizontal: 12, paddingVertical: 8, gap: 8, backgroundColor: '#F8FAFC' }}>
+            {QUICK_EMOJIS.map((emoji) => (
+              <TouchableOpacity
+                key={emoji}
+                onPress={() => setInputText((prev) => `${prev}${emoji}`)}
+                style={{ paddingVertical: 6, paddingHorizontal: 10, borderRadius: 12, backgroundColor: '#EEF2FF' }}
+              >
+                <Text style={{ fontSize: 20 }}>{emoji}</Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+        )}
+
+        <View
+          style={{
+            flexDirection: 'row',
+            alignItems: 'center',
+            padding: 12,
+            borderTopWidth: 1,
+            borderTopColor: '#E2E8F0',
+            backgroundColor: '#F8FAFC',
+          }}
+        >
+          <TouchableOpacity onPress={() => setShowEmojiPanel((prev) => !prev)} style={{ marginRight: 10 }}>
+            <Ionicons name="happy-outline" size={26} color="#64748B" />
+          </TouchableOpacity>
+
+          <TouchableOpacity onPress={handleDocumentPick} style={{ marginRight: 10 }}>
+            <Ionicons name="attach" size={26} color="#64748B" />
           </TouchableOpacity>
 
           <TextInput
-            style={{ flex: 1, backgroundColor: '#fff', borderWidth: 1, borderColor: '#E2E8F0', borderRadius: 24, paddingHorizontal: 16, paddingTop: 10, paddingBottom: 10, fontSize: 16, maxHeight: 100 }}
+            style={{
+              flex: 1,
+              backgroundColor: '#fff',
+              borderWidth: 1,
+              borderColor: '#E2E8F0',
+              borderRadius: 24,
+              paddingHorizontal: 16,
+              paddingTop: 10,
+              paddingBottom: 10,
+              fontSize: 16,
+              maxHeight: 100,
+            }}
             placeholder="Nhắn tin..."
             value={inputText}
             onChangeText={setInputText}
             multiline
           />
 
-          <TouchableOpacity onPress={handleSend} disabled={isSending || inputText.trim().length === 0} style={{ marginLeft: 12, width: 44, height: 44, borderRadius: 22, backgroundColor: inputText.trim().length > 0 ? '#3B82F6' : '#CBD5E1', alignItems: 'center', justifyContent: 'center' }}>
+          <TouchableOpacity
+            onPress={handleSendText}
+            disabled={isSending || inputText.trim().length === 0 || !isSocketReady}
+            style={{
+              marginLeft: 12,
+              width: 44,
+              height: 44,
+              borderRadius: 22,
+              backgroundColor: inputText.trim().length > 0 && isSocketReady ? '#3B82F6' : '#CBD5E1',
+              alignItems: 'center',
+              justifyContent: 'center',
+            }}
+          >
             {isSending ? <ActivityIndicator color="#fff" /> : <Ionicons name="send" size={20} color="#fff" style={{ marginLeft: 4 }} />}
           </TouchableOpacity>
         </View>
       </KeyboardAvoidingView>
+
+      <Modal visible={forwardModalVisible} animationType="slide" onRequestClose={() => setForwardModalVisible(false)}>
+        <SafeAreaView style={{ flex: 1, backgroundColor: '#fff' }}>
+          <View style={{ paddingHorizontal: 16, paddingVertical: 14, borderBottomWidth: 1, borderBottomColor: '#E2E8F0', flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+            <TouchableOpacity onPress={() => setForwardModalVisible(false)}>
+              <Text style={{ color: '#3B82F6', fontWeight: '700' }}>Đóng</Text>
+            </TouchableOpacity>
+            <Text style={{ fontSize: 18, fontWeight: '700' }}>Chuyển tiếp tin nhắn</Text>
+            <View style={{ width: 36 }} />
+          </View>
+
+          <FlatList
+            data={conversations}
+            keyExtractor={(item) => item._id}
+            ListEmptyComponent={
+              <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', paddingVertical: 40 }}>
+                <Text style={{ color: '#64748B' }}>Không có cuộc trò chuyện phù hợp</Text>
+              </View>
+            }
+            renderItem={({ item }) => (
+              <TouchableOpacity
+                disabled={isForwarding}
+                onPress={() => handleForward(item._id)}
+                style={{ paddingHorizontal: 16, paddingVertical: 14, borderBottomWidth: 1, borderBottomColor: '#F1F5F9' }}
+              >
+                <Text style={{ fontSize: 16, color: '#0F172A' }}>{getConversationTitle(item, user?.id || '')}</Text>
+              </TouchableOpacity>
+            )}
+          />
+        </SafeAreaView>
+      </Modal>
     </SafeAreaView>
   );
 }
-
-export default ChatScreen;
-
-
-
-
-
-

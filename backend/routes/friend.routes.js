@@ -90,6 +90,35 @@ router.put(
 );
 /**
  * @openapi
+ * /friends/request/incoming:
+ *   get:
+ *     tags: [Friends]
+ *     summary: Get incoming pending friend requests
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: query
+ *         name: page
+ *         required: false
+ *         schema:
+ *           type: integer
+ *       - in: query
+ *         name: limit
+ *         required: false
+ *         schema:
+ *           type: integer
+ *     responses:
+ *       200:
+ *         description: Incoming friend requests fetched
+ */
+router.get(
+  '/request/incoming',
+  auth,
+  validate({ query: friendPaginationQuerySchema }),
+  friendController.getIncomingFriendRequests,
+);
+/**
+ * @openapi
  * /friends/{friendId}:
  *   delete:
  *     tags: [Friends]

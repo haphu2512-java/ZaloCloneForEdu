@@ -1,6 +1,7 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import {
   StyleSheet,
+  SectionList,
   FlatList,
   TouchableOpacity,
   RefreshControl,
@@ -9,56 +10,78 @@ import {
   Image,
   TextInput,
   View as RNView,
+  Modal,
 } from 'react-native';
 import { Text, View } from '@/components/Themed';
 import Colors from '@/constants/Colors';
 import { useColorScheme } from '@/components/useColorScheme';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '@/context/auth';
-import { getFriendList, sendFriendRequest, removeFriend } from '@/utils/friendService';
+import {
+  getFriendList,
+  sendFriendRequest,
+  getIncomingFriendRequests,
+  acceptFriendRequest,
+  rejectFriendRequest,
+} from '@/utils/friendService';
 import { searchUsers } from '@/utils/searchService';
-import type { UserInfo } from '@/types/chat';
+import type { UserInfo, FriendRequest } from '@/types/chat';
+
+type ContactTab = 'friends' | 'groups' | 'oa';
+type FilterTab = 'all' | 'recent';
 
 export default function ContactsScreen() {
   const colorScheme = useColorScheme() ?? 'light';
   const colors = Colors[colorScheme];
   const { user } = useAuth();
 
+  const brand = colors.tint;
+  const headerBg = colorScheme === 'dark' ? '#1F2937' : brand;
+  const searchSurface = colorScheme === 'dark' ? 'rgba(255,255,255,0.12)' : 'rgba(255,255,255,0.20)';
+
+  const [activeTab, setActiveTab] = useState<ContactTab>('friends');
+  const [activeFilter, setActiveFilter] = useState<FilterTab>('all');
+
   const [friends, setFriends] = useState<UserInfo[]>([]);
+  const [incomingRequests, setIncomingRequests] = useState<FriendRequest[]>([]);
   const [searchResults, setSearchResults] = useState<UserInfo[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [isSearching, setIsSearching] = useState(false);
+  const [requestModalVisible, setRequestModalVisible] = useState(false);
+  const [processingRequestId, setProcessingRequestId] = useState<string | null>(null);
+
   const getUserId = useCallback((u: UserInfo) => u._id || u.id || '', []);
 
-  const loadFriends = useCallback(async () => {
+  const loadContacts = useCallback(async () => {
     try {
-      const res = await getFriendList(1, 100);
-      if (res?.items) {
-        setFriends(res.items);
-      }
+      const [friendsRes, incomingRes] = await Promise.all([
+        getFriendList(1, 100),
+        getIncomingFriendRequests(1, 100),
+      ]);
+      setFriends(friendsRes?.items || []);
+      setIncomingRequests(incomingRes?.items || []);
     } catch (error: any) {
-      console.log('Failed to fetch friends:', error.message);
+      console.log('Failed to fetch contacts:', error.message);
     }
   }, []);
 
   useEffect(() => {
     const init = async () => {
       setLoading(true);
-      await loadFriends();
+      await loadContacts();
       setLoading(false);
     };
     init();
-  }, [loadFriends]);
+  }, [loadContacts]);
 
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
-    await loadFriends();
+    await loadContacts();
     setRefreshing(false);
-  }, [loadFriends]);
+  }, [loadContacts]);
 
-  // Search users when query changes
   useEffect(() => {
     if (!searchQuery.trim()) {
       setSearchResults([]);
@@ -70,7 +93,6 @@ export default function ContactsScreen() {
       setIsSearching(true);
       try {
         const res = await searchUsers(searchQuery.trim(), 1, 20);
-        // Filter out current user from results
         const filtered = (res?.items || []).filter((u) => getUserId(u) && getUserId(u) !== user?.id);
         const deduped = Array.from(new Map(filtered.map((u) => [getUserId(u), u])).values());
         setSearchResults(deduped);
@@ -79,7 +101,7 @@ export default function ContactsScreen() {
       } finally {
         setIsSearching(false);
       }
-    }, 500);
+    }, 400);
 
     return () => clearTimeout(timeout);
   }, [searchQuery, user?.id, getUserId]);
@@ -90,177 +112,301 @@ export default function ContactsScreen() {
       return;
     }
 
-    Alert.alert('Kết bạn', 'Gửi lời mời kết bạn?', [
-      { text: 'Hủy', style: 'cancel' },
-      {
-        text: 'Gửi',
-        onPress: async () => {
-          try {
-            await sendFriendRequest({ toUserId: targetUserId });
-            Alert.alert('Thành công ✅', 'Đã gửi lời mời kết bạn!');
-          } catch (err: any) {
-            Alert.alert('Lỗi', err.message || 'Không thể gửi lời mời');
-          }
-        },
-      },
-    ]);
+    try {
+      await sendFriendRequest({ toUserId: targetUserId });
+      Alert.alert('Thành công', 'Đã gửi lời mời kết bạn');
+      await loadContacts();
+    } catch (err: any) {
+      Alert.alert('Lỗi', err.message || 'Không thể gửi lời mời');
+    }
   };
 
-  const handleRemoveFriend = async (friendId: string) => {
-    Alert.alert('Xóa bạn', 'Bạn có chắc muốn xóa người này khỏi danh sách bạn bè?', [
-      { text: 'Hủy', style: 'cancel' },
-      {
-        text: 'Xóa',
-        style: 'destructive',
-        onPress: async () => {
-          try {
-            await removeFriend(friendId);
-            Alert.alert('Đã xóa', 'Đã xóa khỏi danh sách bạn bè');
-            await loadFriends();
-          } catch (err: any) {
-            Alert.alert('Lỗi', err.message || 'Không thể xóa bạn');
-          }
-        },
-      },
-    ]);
+  const getRequestSender = (request: FriendRequest): UserInfo | null => {
+    const sender = request.fromUserId;
+    if (!sender || typeof sender === 'string') return null;
+    return sender;
+  };
+
+  const handleRespondRequest = async (requestId: string, action: 'accept' | 'reject') => {
+    setProcessingRequestId(requestId);
+    try {
+      if (action === 'accept') {
+        await acceptFriendRequest(requestId);
+      } else {
+        await rejectFriendRequest(requestId);
+      }
+      await loadContacts();
+    } catch (error: any) {
+      Alert.alert('Lỗi', error.message || 'Không thể xử lý lời mời');
+    } finally {
+      setProcessingRequestId(null);
+    }
   };
 
   const isFriend = (userId: string) => friends.some((f) => getUserId(f) === userId);
 
-  const renderUserItem = (item: UserInfo, isFriendItem: boolean) => (
-    <TouchableOpacity
-      style={[styles.userItem, { backgroundColor: colors.surface }]}
-      activeOpacity={0.7}
-      onLongPress={isFriendItem ? () => handleRemoveFriend(getUserId(item)) : undefined}
-    >
+  const filteredFriends = useMemo(() => {
+    if (activeFilter === 'all') return friends;
+    return friends.filter((f) => !!f.isOnline);
+  }, [friends, activeFilter]);
+
+  const friendSections = useMemo(() => {
+    const sorted = [...filteredFriends].sort((a, b) =>
+      (a.username || '').localeCompare(b.username || '', 'vi', { sensitivity: 'base' }),
+    );
+
+    const map = new Map<string, UserInfo[]>();
+    for (const item of sorted) {
+      const letter = (item.username || '#').trim().charAt(0).toUpperCase() || '#';
+      const key = /[A-ZÀ-Ỹ]/.test(letter) ? letter : '#';
+      if (!map.has(key)) map.set(key, []);
+      map.get(key)?.push(item);
+    }
+    return Array.from(map.entries()).map(([title, data]) => ({ title, data }));
+  }, [filteredFriends]);
+
+  const renderSearchUserItem = ({ item }: { item: UserInfo }) => {
+    const uid = getUserId(item);
+    return (
+      <View style={[styles.userRow, { backgroundColor: colors.surface }]}>
+        <Image
+          source={{
+            uri:
+              item.avatarUrl ||
+              `https://ui-avatars.com/api/?name=${encodeURIComponent(item.username)}&background=0EA5E9&color=fff&size=100&bold=true`,
+          }}
+          style={styles.avatar}
+        />
+        <View style={{ flex: 1, backgroundColor: 'transparent' }}>
+          <Text style={[styles.userName, { color: colors.text }]}>{item.username}</Text>
+          <Text style={{ fontSize: 13, color: colors.muted }}>{item.email || item.phone || 'Người dùng'}</Text>
+        </View>
+        {!isFriend(uid) ? (
+          <TouchableOpacity style={[styles.actionBtn, { backgroundColor: brand }]} onPress={() => handleAddFriend(uid)}>
+            <Text style={{ color: '#fff', fontWeight: '700', fontSize: 12 }}>Kết bạn</Text>
+          </TouchableOpacity>
+        ) : (
+          <View style={[styles.badge, { backgroundColor: '#DCFCE7' }]}>
+            <Text style={{ color: '#166534', fontWeight: '700', fontSize: 12 }}>Bạn bè</Text>
+          </View>
+        )}
+      </View>
+    );
+  };
+
+  const renderFriendItem = ({ item }: { item: UserInfo }) => (
+    <View style={[styles.userRow, { backgroundColor: colors.surface }]}>
       <Image
         source={{
-          uri: item.avatarUrl || `https://ui-avatars.com/api/?name=${encodeURIComponent(item.username)}&background=6366F1&color=fff&size=100&bold=true`,
+          uri:
+            item.avatarUrl ||
+            `https://ui-avatars.com/api/?name=${encodeURIComponent(item.username)}&background=2563EB&color=fff&size=100&bold=true`,
         }}
         style={styles.avatar}
       />
-      <View style={[styles.userInfo, { backgroundColor: 'transparent' }]}>
+      <View style={{ flex: 1, backgroundColor: 'transparent' }}>
         <Text style={[styles.userName, { color: colors.text }]}>{item.username}</Text>
-        <Text style={{ fontSize: 13, color: colors.muted }}>
-          {item.email || (item.isOnline ? '🟢 Đang hoạt động' : '')}
-        </Text>
       </View>
-      {/* Online indicator */}
-      {item.isOnline && (
-        <View style={[styles.onlineBadge, { backgroundColor: 'transparent' }]}>
-          <View style={styles.onlineDot} />
-        </View>
-      )}
-      {/* Add friend button for search results */}
-      {!isFriendItem && !isFriend(getUserId(item)) && (
-        <TouchableOpacity
-          style={[styles.addBtn, { backgroundColor: colors.tint }]}
-          onPress={() => handleAddFriend(getUserId(item))}
-        >
-          <Ionicons name="person-add" size={16} color="#fff" />
-        </TouchableOpacity>
-      )}
-      {!isFriendItem && isFriend(getUserId(item)) && (
-        <View style={[styles.friendBadge, { backgroundColor: '#10B98115' }]}>
-          <Text style={{ fontSize: 12, color: '#10B981', fontWeight: '600' }}>Bạn bè</Text>
-        </View>
-      )}
-    </TouchableOpacity>
-  );
-
-  const renderEmpty = () => (
-    <View style={styles.emptyContainer}>
-      <View style={[styles.emptyIcon, { backgroundColor: colors.tint + '15' }]}>
-        <Ionicons name="people-outline" size={48} color={colors.tint} />
-      </View>
-      <Text style={[styles.emptyTitle, { color: colors.text }]}>Chưa có bạn bè</Text>
-      <Text style={[styles.emptySubtitle, { color: colors.muted }]}>
-        Tìm kiếm bạn bè bằng username hoặc email
-      </Text>
+      <TouchableOpacity style={styles.iconBtn}>
+        <Ionicons name="call-outline" size={22} color={colors.muted} />
+      </TouchableOpacity>
+      <TouchableOpacity style={styles.iconBtn}>
+        <Ionicons name="videocam-outline" size={22} color={colors.muted} />
+      </TouchableOpacity>
     </View>
   );
+
+  const renderSectionHeader = ({ section }: { section: { title: string } }) => (
+    <View style={[styles.sectionHeader, { backgroundColor: colors.background }]}>
+      <Text style={[styles.sectionHeaderText, { color: colors.text }]}>{section.title}</Text>
+    </View>
+  );
+
+  const showSearchResults = searchQuery.trim().length > 0;
 
   if (loading) {
     return (
       <View style={[styles.loadingContainer, { backgroundColor: colors.background }]}>
-        <ActivityIndicator size="large" color={colors.tint} />
-        <Text style={{ marginTop: 12, color: colors.muted }}>Đang tải...</Text>
+        <ActivityIndicator size="large" color={brand} />
       </View>
     );
   }
 
-  const showSearchResults = searchQuery.trim().length > 0;
-
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
-      {/* Search bar */}
-      <RNView style={[styles.searchContainer, { backgroundColor: colors.surface, borderBottomColor: colors.border }]}>
-        <RNView style={[styles.searchBar, { backgroundColor: colors.background, borderColor: colors.border }]}>
-          <Ionicons name="search" size={18} color={colors.muted} />
+      <View style={[styles.topBlue, { backgroundColor: headerBg }]}>
+        <View style={[styles.searchBar, { backgroundColor: searchSurface }]}>
+          <Ionicons name="search-outline" size={24} color="#E5E7EB" />
           <TextInput
-            placeholder="Tìm bạn bè (username, email)..."
-            placeholderTextColor={colors.muted}
-            style={[styles.searchInput, { color: colors.text }]}
+            placeholder="Tìm kiếm"
+            placeholderTextColor="#E5E7EB"
+            style={[styles.searchInput, { color: '#fff' }]}
             value={searchQuery}
             onChangeText={setSearchQuery}
-            autoCapitalize="none"
           />
-          {searchQuery.length > 0 && (
-            <TouchableOpacity onPress={() => setSearchQuery('')}>
-              <Ionicons name="close-circle" size={18} color={colors.muted} />
-            </TouchableOpacity>
-          )}
-        </RNView>
-      </RNView>
+          <Ionicons name="person-add-outline" size={22} color="#E5E7EB" />
+        </View>
+      </View>
 
-      {showSearchResults ? (
-        /* Search Results */
+      <View style={[styles.topTabs, { backgroundColor: colors.surface, borderBottomColor: colors.border }]}>
+        {[
+          { key: 'friends', label: 'Bạn bè' },
+          { key: 'groups', label: 'Nhóm' },
+          { key: 'oa', label: 'OA' },
+        ].map((tab) => (
+          <TouchableOpacity
+            key={tab.key}
+            style={[styles.topTabBtn, activeTab === tab.key && { borderBottomColor: brand }]}
+            onPress={() => setActiveTab(tab.key as ContactTab)}
+          >
+            <Text style={[styles.topTabText, activeTab === tab.key ? { color: colors.text } : { color: colors.muted }]}>
+              {tab.label}
+            </Text>
+          </TouchableOpacity>
+        ))}
+      </View>
+
+      {activeTab !== 'friends' ? (
+        <View style={styles.emptyContainer}>
+          <Text style={{ color: colors.muted }}>Tab này đang được cập nhật</Text>
+        </View>
+      ) : showSearchResults ? (
         <FlatList
           data={searchResults}
           keyExtractor={(item, index) => getUserId(item) || `search-${index}`}
-          renderItem={({ item }) => renderUserItem(item, false)}
+          renderItem={renderSearchUserItem}
           ListEmptyComponent={
             isSearching ? (
               <View style={styles.loadingContainer}>
-                <ActivityIndicator size="small" color={colors.tint} />
+                <ActivityIndicator size="small" color={brand} />
               </View>
             ) : (
-              <View style={[styles.emptyContainer, { paddingTop: 60 }]}>
+              <View style={styles.emptyContainer}>
                 <Text style={{ color: colors.muted }}>Không tìm thấy kết quả</Text>
               </View>
             )
           }
-          contentContainerStyle={searchResults.length === 0 ? { flex: 1 } : { paddingVertical: 8 }}
-          ItemSeparatorComponent={() => (
-            <RNView style={{ height: StyleSheet.hairlineWidth, backgroundColor: colors.border, marginLeft: 80 }} />
-          )}
         />
       ) : (
-        /* Friends List */
-        <FlatList
-          data={friends}
+        <SectionList
+          sections={friendSections}
           keyExtractor={(item, index) => getUserId(item) || `friend-${index}`}
-          renderItem={({ item }) => renderUserItem(item, true)}
-          ListEmptyComponent={renderEmpty}
-          refreshControl={
-            <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.tint} />
-          }
-          contentContainerStyle={friends.length === 0 ? { flex: 1 } : { paddingVertical: 8 }}
-          showsVerticalScrollIndicator={false}
+          renderItem={renderFriendItem}
+          renderSectionHeader={renderSectionHeader}
+          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={brand} />}
+          ItemSeparatorComponent={() => <RNView style={{ height: 0 }} />}
           ListHeaderComponent={
-            friends.length > 0 ? (
-              <RNView style={{ paddingHorizontal: 16, paddingTop: 12, paddingBottom: 4 }}>
-                <Text style={{ fontSize: 13, fontWeight: '600', color: colors.muted }}>
-                  {friends.length} bạn bè
+            <View style={{ backgroundColor: colors.surface }}>
+              <TouchableOpacity style={styles.featureRow} onPress={() => setRequestModalVisible(true)}>
+                <View style={[styles.featureIcon, { backgroundColor: brand }]}>
+                  <Ionicons name="people" size={20} color="#fff" />
+                </View>
+                <Text style={[styles.featureText, { color: colors.text }]}>
+                  Lời mời kết bạn ({incomingRequests.length})
                 </Text>
-              </RNView>
-            ) : null
+              </TouchableOpacity>
+
+              <View style={[styles.divider, { backgroundColor: colors.border }]} />
+
+              <View style={styles.filterWrap}>
+                <TouchableOpacity
+                  style={[
+                    styles.filterChip,
+                    { backgroundColor: colors.surface, borderColor: colors.border },
+                    activeFilter === 'all' && { backgroundColor: colorScheme === 'dark' ? '#374151' : '#EEF2F7' },
+                  ]}
+                  onPress={() => setActiveFilter('all')}
+                >
+                  <Text
+                    style={[
+                      styles.filterText,
+                      { color: colors.muted },
+                      activeFilter === 'all' && { color: colors.text, fontWeight: '700' },
+                    ]}
+                  >
+                    Tất cả {friends.length}
+                  </Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[
+                    styles.filterChip,
+                    { backgroundColor: colors.surface, borderColor: colors.border },
+                    activeFilter === 'recent' && { backgroundColor: colorScheme === 'dark' ? '#374151' : '#EEF2F7' },
+                  ]}
+                  onPress={() => setActiveFilter('recent')}
+                >
+                  <Text
+                    style={[
+                      styles.filterText,
+                      { color: colors.muted },
+                      activeFilter === 'recent' && { color: colors.text, fontWeight: '700' },
+                    ]}
+                  >
+                    Mới truy cập
+                  </Text>
+                </TouchableOpacity>
+              </View>
+            </View>
           }
-          ItemSeparatorComponent={() => (
-            <RNView style={{ height: StyleSheet.hairlineWidth, backgroundColor: colors.border, marginLeft: 80 }} />
-          )}
         />
       )}
+
+      <Modal visible={requestModalVisible} animationType="slide" onRequestClose={() => setRequestModalVisible(false)}>
+        <View style={[styles.modalContainer, { backgroundColor: colors.background }]}>
+          <View style={[styles.modalHeader, { borderBottomColor: colors.border }]}>
+            <TouchableOpacity onPress={() => setRequestModalVisible(false)}>
+              <Text style={{ color: brand, fontWeight: '700' }}>Đóng</Text>
+            </TouchableOpacity>
+            <Text style={[styles.modalTitle, { color: colors.text }]}>Lời mời kết bạn</Text>
+            <View style={{ width: 40 }} />
+          </View>
+
+          <FlatList
+            data={incomingRequests}
+            keyExtractor={(item) => item._id}
+            ListEmptyComponent={
+              <View style={styles.emptyContainer}>
+                <Text style={{ color: colors.muted }}>Không có lời mời nào</Text>
+              </View>
+            }
+            renderItem={({ item }) => {
+              const sender = getRequestSender(item);
+              return (
+                <View style={[styles.requestRow, { borderBottomColor: colors.border }]}>
+                  <Image
+                    source={{
+                      uri:
+                        sender?.avatarUrl ||
+                        `https://ui-avatars.com/api/?name=${encodeURIComponent(sender?.username || 'User')}&background=2563EB&color=fff&size=100&bold=true`,
+                    }}
+                    style={styles.avatar}
+                  />
+                  <View style={{ flex: 1, backgroundColor: 'transparent' }}>
+                    <Text style={[styles.userName, { color: colors.text }]}>{sender?.username || 'Người dùng'}</Text>
+                    <Text style={{ color: colors.muted, fontSize: 12 }}>
+                      {sender?.email || sender?.phone || 'Đã gửi lời mời kết bạn'}
+                    </Text>
+                  </View>
+                  <TouchableOpacity
+                    style={[styles.smallBtn, { backgroundColor: '#DCFCE7' }]}
+                    disabled={processingRequestId === item._id}
+                    onPress={() => handleRespondRequest(item._id, 'accept')}
+                  >
+                    <Text style={{ color: '#166534', fontWeight: '700', fontSize: 12 }}>Đồng ý</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={[styles.smallBtn, { backgroundColor: '#F3F4F6' }]}
+                    disabled={processingRequestId === item._id}
+                    onPress={() => handleRespondRequest(item._id, 'reject')}
+                  >
+                    <Text style={{ color: '#374151', fontWeight: '700', fontSize: 12 }}>Từ chối</Text>
+                  </TouchableOpacity>
+                </View>
+              );
+            }}
+          />
+        </View>
+      </Modal>
     </View>
   );
 }
@@ -269,54 +415,149 @@ const styles = StyleSheet.create({
   container: { flex: 1 },
   loadingContainer: { flex: 1, justifyContent: 'center', alignItems: 'center' },
 
-  searchContainer: {
-    paddingHorizontal: 16,
+  topBlue: {
     paddingTop: 8,
-    paddingBottom: 12,
-    borderBottomWidth: StyleSheet.hairlineWidth,
+    paddingBottom: 10,
+    paddingHorizontal: 14,
   },
   searchBar: {
     flexDirection: 'row',
     alignItems: 'center',
-    borderWidth: 1,
-    borderRadius: 12,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    gap: 8,
+    borderRadius: 10,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+    gap: 10,
   },
-  searchInput: { flex: 1, fontSize: 15 },
+  searchInput: {
+    flex: 1,
+    fontSize: 18,
+    fontWeight: '500',
+  },
 
-  userItem: {
+  topTabs: {
+    flexDirection: 'row',
+    borderBottomWidth: StyleSheet.hairlineWidth,
+  },
+  topTabBtn: {
+    flex: 1,
+    alignItems: 'center',
+    paddingVertical: 12,
+    borderBottomWidth: 3,
+    borderBottomColor: 'transparent',
+  },
+  topTabText: {
+    fontSize: 18,
+    fontWeight: '600',
+  },
+
+  featureRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 16,
+    paddingVertical: 16,
+    gap: 12,
+  },
+  featureIcon: {
+    width: 40,
+    height: 40,
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  featureText: {
+    fontSize: 19,
+    fontWeight: '500',
+  },
+  divider: {
+    height: 8,
+  },
+
+  filterWrap: {
+    flexDirection: 'row',
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    gap: 10,
+  },
+  filterChip: {
+    borderWidth: 1,
+    borderRadius: 24,
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+  },
+  filterText: {
+    fontSize: 16,
+    fontWeight: '500',
+  },
+
+  sectionHeader: {
+    paddingHorizontal: 16,
+    paddingTop: 14,
+    paddingBottom: 6,
+  },
+  sectionHeaderText: {
+    fontSize: 34,
+    fontWeight: '400',
+  },
+
+  userRow: {
     flexDirection: 'row',
     alignItems: 'center',
     paddingHorizontal: 16,
     paddingVertical: 12,
   },
-  avatar: { width: 50, height: 50, borderRadius: 25, marginRight: 14 },
-  userInfo: { flex: 1 },
-  userName: { fontSize: 16, fontWeight: '600', marginBottom: 2 },
-
-  onlineBadge: { marginRight: 8 },
-  onlineDot: {
-    width: 10,
-    height: 10,
-    borderRadius: 5,
-    backgroundColor: '#10B981',
+  avatar: {
+    width: 54,
+    height: 54,
+    borderRadius: 27,
+    marginRight: 14,
   },
-
-  addBtn: {
-    paddingHorizontal: 12,
-    paddingVertical: 8,
+  userName: {
+    fontSize: 18,
+    fontWeight: '500',
+  },
+  iconBtn: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginLeft: 8,
+  },
+  actionBtn: {
     borderRadius: 10,
-  },
-  friendBadge: {
     paddingHorizontal: 10,
-    paddingVertical: 6,
+    paddingVertical: 8,
+  },
+  badge: {
     borderRadius: 10,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
   },
 
-  emptyContainer: { flex: 1, justifyContent: 'center', alignItems: 'center', paddingHorizontal: 40 },
-  emptyIcon: { width: 96, height: 96, borderRadius: 48, alignItems: 'center', justifyContent: 'center', marginBottom: 20 },
-  emptyTitle: { fontSize: 20, fontWeight: '700', marginBottom: 8 },
-  emptySubtitle: { fontSize: 14, textAlign: 'center', lineHeight: 20 },
+  emptyContainer: { flex: 1, justifyContent: 'center', alignItems: 'center', paddingVertical: 48 },
+
+  modalContainer: { flex: 1 },
+  modalHeader: {
+    paddingHorizontal: 16,
+    paddingTop: 16,
+    paddingBottom: 12,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  modalTitle: { fontSize: 18, fontWeight: '700' },
+  requestRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    gap: 8,
+  },
+  smallBtn: {
+    borderRadius: 10,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+  },
 });

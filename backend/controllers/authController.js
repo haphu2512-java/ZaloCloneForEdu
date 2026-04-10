@@ -19,6 +19,17 @@ const generateUsername = (identifier) => {
   return `${base}_${crypto.randomBytes(3).toString('hex')}`;
 };
 
+const createEmailOtp = () => String(Math.floor(100000 + Math.random() * 900000));
+
+const sendVerificationOtp = async ({ email, otp }) => {
+  await sendEmail({
+    to: email,
+    subject: 'Mã OTP xác thực email - Zalo Clone',
+    text: `Mã OTP xác thực email của bạn là: ${otp}. Mã có hiệu lực trong 10 phút.`,
+    html: `<p>Mã OTP xác thực email của bạn là: <strong>${otp}</strong></p><p>Mã có hiệu lực trong 10 phút.</p>`,
+  });
+};
+
 const register = asyncHandler(async (req, res) => {
   const { username, email, password, phone } = req.body;
   
@@ -39,12 +50,12 @@ const register = asyncHandler(async (req, res) => {
   const finalUsername = username || generateUsername(email || phone || 'user');
   const passwordHash = await bcrypt.hash(password, 10);
   
-  // Verification token for email
+  // Verification OTP (6 digits) for email
   let emailVerificationToken = null;
   let emailVerificationExpires = null;
   if (email) {
-    emailVerificationToken = crypto.randomBytes(32).toString('hex');
-    emailVerificationExpires = new Date(Date.now() + 24 * 60 * 60 * 1000); // 24 hours
+    emailVerificationToken = createEmailOtp();
+    emailVerificationExpires = new Date(Date.now() + 10 * 60 * 1000); // 10 minutes
   }
 
   const user = await User.create({
@@ -57,11 +68,9 @@ const register = asyncHandler(async (req, res) => {
   });
 
   if (email) {
-    await sendEmail({
-      to: email,
-      subject: 'Verify your email for Zalo Clone',
-      html: `<p>Your verification token is: <strong>${emailVerificationToken}</strong></p><p>Use this in the app to verify your email.</p>`
-    }).catch(err => console.error('Failed to send verification email', err));
+    await sendVerificationOtp({ email, otp: emailVerificationToken }).catch((err) =>
+      console.error('Failed to send verification email', err),
+    );
   }
 
   const tokens = await issueTokenPair(user);
@@ -130,6 +139,29 @@ const verifyEmail = asyncHandler(async (req, res) => {
   await user.save();
 
   return successResponse(res, {}, 'Email verified successfully');
+});
+
+const resendVerificationEmail = asyncHandler(async (req, res) => {
+  const user = await User.findById(req.user._id);
+  if (!user || user.deletedAt) {
+    throw new ApiError(404, 'USER_NOT_FOUND', 'User not found');
+  }
+
+  if (!user.email) {
+    throw new ApiError(400, 'EMAIL_REQUIRED', 'Account does not have an email to verify');
+  }
+
+  if (user.isEmailVerified) {
+    return successResponse(res, {}, 'Email already verified');
+  }
+
+  const otp = createEmailOtp();
+  user.emailVerificationToken = otp;
+  user.emailVerificationExpires = new Date(Date.now() + 10 * 60 * 1000);
+  await user.save();
+
+  await sendVerificationOtp({ email: user.email, otp });
+  return successResponse(res, {}, 'Verification OTP sent');
 });
 
 const forgotPassword = asyncHandler(async (req, res) => {
@@ -213,6 +245,7 @@ module.exports = {
   logout,
   logoutAll,
   verifyEmail,
+  resendVerificationEmail,
   forgotPassword,
   resetPassword,
   changePassword

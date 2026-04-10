@@ -28,6 +28,8 @@ export interface SenderInfo {
   _id: string;
   username: string;
   avatarUrl?: string | null;
+  fullName?: string;
+  avatar?: string | null;
 }
 
 // --- Core Models ---
@@ -51,20 +53,39 @@ export interface Reaction {
   emoji: string;
 }
 
+/** Legacy attachment type used by old chat UI components */
+export interface Attachment {
+  _id: string;
+  name: string;
+  type: string;
+  url: string;
+  size: number;
+}
+
 /** Backend Message model */
 export interface Message {
   _id: string;
-  conversationId: string;
-  senderId: SenderInfo;
+  conversationId: string | { _id: string };
+  senderId: SenderInfo | string;
+  /** Legacy sender field for older UI components */
+  sender?: SenderInfo | { id?: string; _id?: string; username?: string; fullName?: string; avatar?: string };
   content: string;
   mediaIds: string[];
+  /** Legacy attachment field for older UI components */
+  attachments: Attachment[];
+  /** Legacy message type */
+  type?: 'text' | 'image' | 'file' | string;
   replyTo?: Message | string | null;
   forwardFrom?: Message | string | null;
   deliveredTo: string[];
   seenBy: string[];
   isRecalled?: boolean;
+  /** Legacy delete/edit flags for older UI components */
+  isDeleted?: boolean;
+  isEdited?: boolean;
+  readBy?: string[];
   deletedBy?: string[];
-  reactions?: Reaction[];
+  reactions: Reaction[];
   createdAt: string;
   updatedAt: string;
   /** Client-only */
@@ -74,8 +95,8 @@ export interface Message {
 /** Backend FriendRequest model */
 export interface FriendRequest {
   _id: string;
-  fromUserId: string;
-  toUserId: string;
+  fromUserId: string | UserInfo;
+  toUserId: string | UserInfo;
   status: 'pending' | 'accepted' | 'rejected';
   respondedAt?: string | null;
   createdAt: string;

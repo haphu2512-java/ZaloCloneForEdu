@@ -35,4 +35,15 @@ module.exports = {
   cloudinaryApiSecret: process.env.CLOUDINARY_API_SECRET || '',
   cloudinaryUploadFolder: process.env.CLOUDINARY_UPLOAD_FOLDER || 'ott-messaging',
   cloudinarySignatureTtlSeconds: Number(process.env.CLOUDINARY_SIGNATURE_TTL_SECONDS || 60),
+  smtpHost: process.env.SMTP_HOST || '',
+  smtpPort: Number(process.env.SMTP_PORT || 587),
+  smtpUser: process.env.SMTP_USER || '',
+  smtpPass: process.env.SMTP_PASS || '',
+  smtpFrom: process.env.SMTP_FROM || '',
+  // When true, allow self-signed / invalid SMTP TLS certificates (development only)
+  smtpAllowUnauthorized: (process.env.SMTP_ALLOW_UNAUTHORIZED === 'true') || false,
+  // In development, default to Ethereal unless explicitly disabled.
+  smtpUseEthereal:
+    process.env.SMTP_USE_ETHEREAL === 'true'
+    || (process.env.SMTP_USE_ETHEREAL !== 'false' && (process.env.NODE_ENV || 'development') === 'development'),
 };

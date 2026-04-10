@@ -257,6 +257,16 @@ export async function verifyEmail(token: string): Promise<void> {
 }
 
 /**
+ * Gửi lại mã OTP xác thực email cho user đang đăng nhập
+ * POST /auth/resend-verification
+ */
+export async function resendVerificationEmail(): Promise<void> {
+  await fetchAPI(`${AUTH_ENDPOINT}/resend-verification`, {
+    method: 'POST',
+  });
+}
+
+/**
  * Quên mật khẩu
  * POST /auth/forgot-password { email, phone }
  */

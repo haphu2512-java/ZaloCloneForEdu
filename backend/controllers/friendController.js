@@ -117,10 +117,45 @@ const getFriendList = asyncHandler(async (req, res) => {
   );
 });
 
+const getIncomingFriendRequests = asyncHandler(async (req, res) => {
+  const page = Number(req.query.page);
+  const limit = Number(req.query.limit);
+  const skip = (page - 1) * limit;
+
+  const filter = {
+    toUserId: req.user._id,
+    status: 'pending',
+  };
+
+  const [items, total] = await Promise.all([
+    FriendRequest.find(filter)
+      .sort({ createdAt: -1, _id: -1 })
+      .skip(skip)
+      .limit(limit)
+      .populate('fromUserId', 'username email phone avatarUrl isOnline lastSeen'),
+    FriendRequest.countDocuments(filter),
+  ]);
+
+  return successResponse(
+    res,
+    {
+      items,
+      pagination: {
+        page,
+        limit,
+        total,
+        totalPages: Math.ceil(total / limit),
+      },
+    },
+    'Incoming friend requests fetched',
+  );
+});
+
 module.exports = {
   sendFriendRequest,
   acceptFriendRequest,
   rejectFriendRequest,
   removeFriend,
   getFriendList,
+  getIncomingFriendRequests,
 };
