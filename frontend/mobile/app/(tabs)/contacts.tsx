@@ -8,7 +8,6 @@ import {
   Alert,
   Image,
   TextInput,
-  SectionList,
   View as RNView,
 } from 'react-native';
 import { Text, View } from '@/components/Themed';
@@ -31,6 +30,7 @@ export default function ContactsScreen() {
   const [refreshing, setRefreshing] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [isSearching, setIsSearching] = useState(false);
+  const getUserId = useCallback((u: UserInfo) => u._id || u.id || '', []);
 
   const loadFriends = useCallback(async () => {
     try {
@@ -71,8 +71,9 @@ export default function ContactsScreen() {
       try {
         const res = await searchUsers(searchQuery.trim(), 1, 20);
         // Filter out current user from results
-        const filtered = res?.items?.filter((u) => u._id !== user?.id) || [];
-        setSearchResults(filtered);
+        const filtered = (res?.items || []).filter((u) => getUserId(u) && getUserId(u) !== user?.id);
+        const deduped = Array.from(new Map(filtered.map((u) => [getUserId(u), u])).values());
+        setSearchResults(deduped);
       } catch (error: any) {
         console.log('Search failed:', error.message);
       } finally {
@@ -81,9 +82,14 @@ export default function ContactsScreen() {
     }, 500);
 
     return () => clearTimeout(timeout);
-  }, [searchQuery, user?.id]);
+  }, [searchQuery, user?.id, getUserId]);
 
   const handleAddFriend = async (targetUserId: string) => {
+    if (!targetUserId) {
+      Alert.alert('Lỗi', 'Không xác định được người dùng để kết bạn');
+      return;
+    }
+
     Alert.alert('Kết bạn', 'Gửi lời mời kết bạn?', [
       { text: 'Hủy', style: 'cancel' },
       {
@@ -119,13 +125,13 @@ export default function ContactsScreen() {
     ]);
   };
 
-  const isFriend = (userId: string) => friends.some((f) => f._id === userId);
+  const isFriend = (userId: string) => friends.some((f) => getUserId(f) === userId);
 
   const renderUserItem = (item: UserInfo, isFriendItem: boolean) => (
     <TouchableOpacity
       style={[styles.userItem, { backgroundColor: colors.surface }]}
       activeOpacity={0.7}
-      onLongPress={isFriendItem ? () => handleRemoveFriend(item._id) : undefined}
+      onLongPress={isFriendItem ? () => handleRemoveFriend(getUserId(item)) : undefined}
     >
       <Image
         source={{
@@ -146,15 +152,15 @@ export default function ContactsScreen() {
         </View>
       )}
       {/* Add friend button for search results */}
-      {!isFriendItem && !isFriend(item._id) && (
+      {!isFriendItem && !isFriend(getUserId(item)) && (
         <TouchableOpacity
           style={[styles.addBtn, { backgroundColor: colors.tint }]}
-          onPress={() => handleAddFriend(item._id)}
+          onPress={() => handleAddFriend(getUserId(item))}
         >
           <Ionicons name="person-add" size={16} color="#fff" />
         </TouchableOpacity>
       )}
-      {!isFriendItem && isFriend(item._id) && (
+      {!isFriendItem && isFriend(getUserId(item)) && (
         <View style={[styles.friendBadge, { backgroundColor: '#10B98115' }]}>
           <Text style={{ fontSize: 12, color: '#10B981', fontWeight: '600' }}>Bạn bè</Text>
         </View>
@@ -211,7 +217,7 @@ export default function ContactsScreen() {
         /* Search Results */
         <FlatList
           data={searchResults}
-          keyExtractor={(item) => item._id}
+          keyExtractor={(item, index) => getUserId(item) || `search-${index}`}
           renderItem={({ item }) => renderUserItem(item, false)}
           ListEmptyComponent={
             isSearching ? (
@@ -233,7 +239,7 @@ export default function ContactsScreen() {
         /* Friends List */
         <FlatList
           data={friends}
-          keyExtractor={(item) => item._id}
+          keyExtractor={(item, index) => getUserId(item) || `friend-${index}`}
           renderItem={({ item }) => renderUserItem(item, true)}
           ListEmptyComponent={renderEmpty}
           refreshControl={

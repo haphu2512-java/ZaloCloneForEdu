@@ -28,22 +28,40 @@ export default function LoginScreen() {
       setErrorMsg('Vui lòng nhập đầy đủ thông tin');
       return;
     }
+
+    const ident = identifier.trim();
+    const pwd = password.trim();
+    const isEmail = ident.includes('@');
+    const isPhone = /^\d{8,20}$/.test(ident);
+
+    if (pwd.length < 6) {
+      setErrorMsg('Mật khẩu phải từ 6 ký tự');
+      return;
+    }
+
+    if (!isEmail && !isPhone && ident.length < 3) {
+      setErrorMsg('Username tối thiểu 3 ký tự hoặc SĐT từ 8 số');
+      return;
+    }
+
     setErrorMsg('');
     setIsSubmitting(true);
     try {
-      // Backend hỗ trợ login bằng email hoặc username
-      const ident = identifier.trim();
-      const isEmail = ident.includes('@');
-      const isPhone = /^\d+$/.test(ident);
-
       await login(
         isEmail
-          ? { email: ident, password }
-          : isPhone ? { phone: ident, password } : { username: ident, password },
+          ? { email: ident, password: pwd }
+          : isPhone
+            ? { phone: ident, password: pwd }
+            : { username: ident, password: pwd },
       );
-      // Thành công -> context tự auto đá sang /(tabs)
     } catch (err: any) {
-      setErrorMsg(err.message || 'Đăng nhập thất bại');
+      if (err?.errorCode === 'INVALID_CREDENTIALS' || err?.statusCode === 401) {
+        setErrorMsg('Sai tài khoản hoặc mật khẩu');
+      } else if (err?.errorCode === 'VALIDATION_ERROR') {
+        setErrorMsg('Thông tin đăng nhập không hợp lệ');
+      } else {
+        setErrorMsg(err.message || 'Đăng nhập thất bại');
+      }
     } finally {
       setIsSubmitting(false);
     }
@@ -51,23 +69,29 @@ export default function LoginScreen() {
 
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: '#fff' }}>
-      <KeyboardAvoidingView
-        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-        style={{ flex: 1 }}
-      >
+      <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={{ flex: 1 }}>
         <ScrollView
           contentContainerStyle={{ flexGrow: 1, paddingHorizontal: 32 }}
           showsVerticalScrollIndicator={false}
         >
           <View style={{ flex: 1, justifyContent: 'center', paddingVertical: 48 }}>
-            {/* Header Section */}
             <View style={{ alignItems: 'center', marginBottom: 48 }}>
-              <View style={{
-                width: 96, height: 96, backgroundColor: '#2563EB', borderRadius: 28,
-                alignItems: 'center', justifyContent: 'center', marginBottom: 24,
-                shadowColor: '#93C5FD', shadowOffset: { width: 0, height: 12 },
-                shadowOpacity: 0.4, shadowRadius: 20, elevation: 12,
-              }}>
+              <View
+                style={{
+                  width: 96,
+                  height: 96,
+                  backgroundColor: '#2563EB',
+                  borderRadius: 28,
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  marginBottom: 24,
+                  shadowColor: '#93C5FD',
+                  shadowOffset: { width: 0, height: 12 },
+                  shadowOpacity: 0.4,
+                  shadowRadius: 20,
+                  elevation: 12,
+                }}
+              >
                 <Ionicons name="chatbubbles" size={48} color="white" />
               </View>
               <Text style={{ fontSize: 36, fontWeight: '800', color: '#0F172A', letterSpacing: -0.5 }}>
@@ -78,25 +102,43 @@ export default function LoginScreen() {
               </Text>
             </View>
 
-            {/* Form Section */}
             <View>
               {errorMsg ? (
-                <View style={{
-                  backgroundColor: '#FEF2F2', padding: 14, borderRadius: 14,
-                  borderWidth: 1, borderColor: '#FECACA', marginBottom: 12,
-                }}>
+                <View
+                  style={{
+                    backgroundColor: '#FEF2F2',
+                    padding: 14,
+                    borderRadius: 14,
+                    borderWidth: 1,
+                    borderColor: '#FECACA',
+                    marginBottom: 12,
+                  }}
+                >
                   <Text style={{ color: '#EF4444', textAlign: 'center', fontWeight: '600' }}>{errorMsg}</Text>
                 </View>
               ) : null}
 
-              <Text style={{ color: '#1E293B', fontWeight: '600', marginLeft: 4, marginBottom: 6 }}>Email, SĐT hoặc Username</Text>
-              <View style={{
-                flexDirection: 'row', alignItems: 'center', backgroundColor: '#F8FAFC',
-                borderWidth: 1, borderColor: '#E2E8F0', borderRadius: 16, paddingHorizontal: 16,
-                paddingVertical: 16, marginBottom: 16,
-                shadowColor: '#E2E8F0', shadowOffset: { width: 0, height: 2 },
-                shadowOpacity: 0.3, shadowRadius: 4, elevation: 2,
-              }}>
+              <Text style={{ color: '#1E293B', fontWeight: '600', marginLeft: 4, marginBottom: 6 }}>
+                Email, SĐT hoặc Username
+              </Text>
+              <View
+                style={{
+                  flexDirection: 'row',
+                  alignItems: 'center',
+                  backgroundColor: '#F8FAFC',
+                  borderWidth: 1,
+                  borderColor: '#E2E8F0',
+                  borderRadius: 16,
+                  paddingHorizontal: 16,
+                  paddingVertical: 16,
+                  marginBottom: 16,
+                  shadowColor: '#E2E8F0',
+                  shadowOffset: { width: 0, height: 2 },
+                  shadowOpacity: 0.3,
+                  shadowRadius: 4,
+                  elevation: 2,
+                }}
+              >
                 <Ionicons name="person-outline" size={22} color="#64748B" />
                 <TextInput
                   placeholder="Nhập email, SĐT hoặc username"
@@ -108,7 +150,15 @@ export default function LoginScreen() {
                 />
               </View>
 
-              <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6, paddingHorizontal: 4 }}>
+              <View
+                style={{
+                  flexDirection: 'row',
+                  justifyContent: 'space-between',
+                  alignItems: 'center',
+                  marginBottom: 6,
+                  paddingHorizontal: 4,
+                }}
+              >
                 <Text style={{ color: '#1E293B', fontWeight: '600' }}>Mật khẩu</Text>
                 <Link href={'/(auth)/forgot-password' as any} asChild>
                   <TouchableOpacity>
@@ -116,13 +166,23 @@ export default function LoginScreen() {
                   </TouchableOpacity>
                 </Link>
               </View>
-              <View style={{
-                flexDirection: 'row', alignItems: 'center', backgroundColor: '#F8FAFC',
-                borderWidth: 1, borderColor: '#E2E8F0', borderRadius: 16, paddingHorizontal: 16,
-                paddingVertical: 16,
-                shadowColor: '#E2E8F0', shadowOffset: { width: 0, height: 2 },
-                shadowOpacity: 0.3, shadowRadius: 4, elevation: 2,
-              }}>
+              <View
+                style={{
+                  flexDirection: 'row',
+                  alignItems: 'center',
+                  backgroundColor: '#F8FAFC',
+                  borderWidth: 1,
+                  borderColor: '#E2E8F0',
+                  borderRadius: 16,
+                  paddingHorizontal: 16,
+                  paddingVertical: 16,
+                  shadowColor: '#E2E8F0',
+                  shadowOffset: { width: 0, height: 2 },
+                  shadowOpacity: 0.3,
+                  shadowRadius: 4,
+                  elevation: 2,
+                }}
+              >
                 <Ionicons name="lock-closed-outline" size={22} color="#64748B" />
                 <TextInput
                   placeholder="Nhập mật khẩu"
@@ -144,18 +204,23 @@ export default function LoginScreen() {
                 </TouchableOpacity>
               </View>
 
-              {/* Login Button */}
               <TouchableOpacity
                 onPress={handleLogin}
                 activeOpacity={0.8}
                 disabled={isSubmitting}
                 style={{
                   backgroundColor: isSubmitting ? '#93C5FD' : '#2563EB',
-                  borderRadius: 16, paddingVertical: 18, alignItems: 'center',
-                  flexDirection: 'row', justifyContent: 'center', marginTop: 24,
+                  borderRadius: 16,
+                  paddingVertical: 18,
+                  alignItems: 'center',
+                  flexDirection: 'row',
+                  justifyContent: 'center',
+                  marginTop: 24,
                   shadowColor: isSubmitting ? '#93C5FD' : '#2563EB',
                   shadowOffset: { width: 0, height: 10 },
-                  shadowOpacity: 0.35, shadowRadius: 16, elevation: 10,
+                  shadowOpacity: 0.35,
+                  shadowRadius: 16,
+                  elevation: 10,
                 }}
               >
                 {isSubmitting ? <ActivityIndicator color="white" style={{ marginRight: 8 }} /> : null}
@@ -163,7 +228,6 @@ export default function LoginScreen() {
               </TouchableOpacity>
             </View>
 
-            {/* Footer Section */}
             <View style={{ flexDirection: 'row', justifyContent: 'center', marginTop: 'auto', paddingTop: 40 }}>
               <Text style={{ color: '#64748B', fontSize: 15 }}>Chưa có tài khoản? </Text>
               <Link href={'/(auth)/register' as any} asChild>

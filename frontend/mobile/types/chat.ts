@@ -13,9 +13,11 @@ export type MessageStatus = 'sending' | 'sent' | 'delivered' | 'read' | 'failed'
 
 /** User info khi được populate */
 export interface UserInfo {
-  _id: string;
+  id?: string;
+  _id?: string;
   username: string;
   email?: string;
+  phone?: string;
   avatarUrl?: string | null;
   isOnline?: boolean;
   lastSeen?: string | null;

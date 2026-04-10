@@ -20,6 +20,7 @@ import FontAwesome from '@expo/vector-icons/FontAwesome';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '@/context/auth';
 import { changePassword } from '@/utils/authService';
+import { useRouter } from 'expo-router';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
@@ -33,6 +34,7 @@ export default function ProfileScreen() {
   const colorScheme = useColorScheme() ?? 'light';
   const colors = Colors[colorScheme];
   const { user, logout, updateUser, refreshUser } = useAuth();
+  const router = useRouter();
 
   const [refreshing, setRefreshing] = useState(false);
   const [editModalVisible, setEditModalVisible] = useState(false);
@@ -72,6 +74,21 @@ export default function ProfileScreen() {
     await refreshUser();
     setRefreshing(false);
   }, []);
+
+  const requireEmailVerification = useCallback(() => {
+    if (user?.email && !user?.isEmailVerified) {
+      Alert.alert(
+        'Xác thực email',
+        'Bạn cần xác thực email trước khi cập nhật hồ sơ.',
+        [
+          { text: 'Để sau', style: 'cancel' },
+          { text: 'Xác thực ngay', onPress: () => router.push('/(auth)/verify-email' as any) },
+        ],
+      );
+      return true;
+    }
+    return false;
+  }, [user?.email, user?.isEmailVerified, router]);
 
   // ==================== EDIT PROFILE ====================
   const handleSaveProfile = async () => {
@@ -272,21 +289,30 @@ export default function ProfileScreen() {
           ionIcon="create-outline"
           title="Chỉnh sửa hồ sơ"
           subtitle="Cập nhật username và số điện thoại"
-          onPress={() => setEditModalVisible(true)}
+          onPress={() => {
+            if (requireEmailVerification()) return;
+            setEditModalVisible(true);
+          }}
           color="#6366F1"
         />
         <MenuItem
           ionIcon="lock-closed-outline"
           title="Đổi mật khẩu"
           subtitle="Cập nhật mật khẩu an toàn"
-          onPress={() => setPasswordModalVisible(true)}
+          onPress={() => {
+            if (requireEmailVerification()) return;
+            setPasswordModalVisible(true);
+          }}
           color="#10B981"
         />
         <MenuItem
           ionIcon="image-outline"
           title="Đổi ảnh đại diện"
           subtitle="Thay đổi hình ảnh tài khoản"
-          onPress={() => setAvatarModalVisible(true)}
+          onPress={() => {
+            if (requireEmailVerification()) return;
+            setAvatarModalVisible(true);
+          }}
           color="#F59E0B"
         />
       </View>

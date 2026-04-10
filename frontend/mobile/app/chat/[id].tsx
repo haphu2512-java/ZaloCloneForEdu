@@ -252,15 +252,3 @@ export default ChatScreen;
 
 
 
-// Lỗi 1 : 
-//  LOG  Fetching: http://192.168.100.53:5000/api/v1/friends/request
-//  ERROR  API Error on /friends/request: Invalid payload 
-// Lỗi 2 : 
-//  LOG  Fetching: http://192.168.100.53:5000/api/v1/search/users?q=09&page=1&limit=20
-//  ERROR  Each child in a list should have a unique "key" prop.%s%s See https://react.dev/link/warning-keys for more information.
-
-// Check the render method of `ScrollView`.  It was passed a child from VirtualizedList.
-// Lỗi 3:
-//  LOG  Fetching: http://192.168.100.53:5000/api/v1/auth/login
-//  ERROR  API Error on /auth/login: Invalid payload 
-// --> Sai mật khẩu hoặc tài khoản nhưng không thống báo, mà lại trả ra Invalid Payload

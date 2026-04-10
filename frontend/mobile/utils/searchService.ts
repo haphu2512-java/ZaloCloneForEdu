@@ -7,6 +7,14 @@ import type { UserInfo, PaginatedResponse } from '../types/chat';
 
 const SEARCH_ENDPOINT = '/search';
 
+function normalizeUser(user: UserInfo): UserInfo {
+  return {
+    ...user,
+    _id: user._id || user.id || '',
+    id: user.id || user._id || '',
+  };
+}
+
 /**
  * Tìm kiếm users theo username, email hoặc phone
  * GET /search/users?q=&page=&limit=
@@ -22,7 +30,10 @@ export async function searchUsers(
     limit: String(limit),
   });
   const res = await fetchAPI(`${SEARCH_ENDPOINT}/users?${params.toString()}`);
-  return res.data;
+  return {
+    ...res.data,
+    items: (res.data?.items || []).map(normalizeUser),
+  };
 }
 
 /**

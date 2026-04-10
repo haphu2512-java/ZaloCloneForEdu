@@ -87,21 +87,24 @@ const options = {
         },
         RegisterInput: {
           type: 'object',
-          required: ['username', 'email', 'password'],
+          required: ['password'],
+          oneOf: [{ required: ['email'] }, { required: ['phone'] }],
           properties: {
             username: { type: 'string', minLength: 3, maxLength: 50 },
             email: { type: 'string', format: 'email' },
             password: { type: 'string', minLength: 6, maxLength: 100 },
-            phone: { type: 'string', nullable: true },
+            phone: { type: 'string', minLength: 8, maxLength: 20, nullable: true },
           },
         },
         LoginInput: {
           type: 'object',
           required: ['password'],
+          oneOf: [{ required: ['email'] }, { required: ['username'] }, { required: ['phone'] }],
           properties: {
             email: { type: 'string', format: 'email' },
-            username: { type: 'string' },
-            password: { type: 'string' },
+            username: { type: 'string', minLength: 3, maxLength: 50 },
+            phone: { type: 'string', minLength: 8, maxLength: 20 },
+            password: { type: 'string', minLength: 6, maxLength: 100 },
           },
         },
         RefreshInput: {
@@ -109,6 +112,37 @@ const options = {
           required: ['refreshToken'],
           properties: {
             refreshToken: { type: 'string' },
+          },
+        },
+        VerifyEmailInput: {
+          type: 'object',
+          required: ['token'],
+          properties: {
+            token: { type: 'string', minLength: 10 },
+          },
+        },
+        ForgotPasswordInput: {
+          type: 'object',
+          oneOf: [{ required: ['email'] }, { required: ['phone'] }],
+          properties: {
+            email: { type: 'string', format: 'email' },
+            phone: { type: 'string', minLength: 8, maxLength: 20 },
+          },
+        },
+        ResetPasswordInput: {
+          type: 'object',
+          required: ['token', 'newPassword'],
+          properties: {
+            token: { type: 'string', minLength: 10 },
+            newPassword: { type: 'string', minLength: 6, maxLength: 100 },
+          },
+        },
+        ChangePasswordInput: {
+          type: 'object',
+          required: ['currentPassword', 'newPassword'],
+          properties: {
+            currentPassword: { type: 'string', minLength: 6, maxLength: 100 },
+            newPassword: { type: 'string', minLength: 6, maxLength: 100 },
           },
         },
         UpdateUserInput: {

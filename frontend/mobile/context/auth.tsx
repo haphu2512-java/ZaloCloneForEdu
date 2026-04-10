@@ -79,14 +79,24 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     if (isLoading) return;
 
     const inAuthGroup = segments[0] === ('(auth)' as any);
+    const currentAuthScreen = segments[1] as string | undefined;
+    const requiresEmailVerification = Boolean(user?.email) && !user?.isEmailVerified;
 
     // Nếu chưa đăng nhập và cố vào (tabs) -> đá qua Login
     if (!user && !inAuthGroup) {
       router.replace('/(auth)/login' as any);
     }
-    // Nếu đã đăng nhập nhưng đang đứng ở màn đăng nhập -> quăng vô (tabs)
+    // Nếu đã đăng nhập nhưng chưa verify email, luôn ưu tiên màn verify-email.
     else if (user && inAuthGroup) {
-      router.replace('/(tabs)' as any);
+      if (requiresEmailVerification && currentAuthScreen !== 'verify-email') {
+        router.replace('/(auth)/verify-email' as any);
+        return;
+      }
+      if (!requiresEmailVerification) {
+        router.replace('/(tabs)' as any);
+      }
+    } else if (user && !inAuthGroup && requiresEmailVerification) {
+      router.replace('/(auth)/verify-email' as any);
     }
   }, [user, segments, isLoading]);
 

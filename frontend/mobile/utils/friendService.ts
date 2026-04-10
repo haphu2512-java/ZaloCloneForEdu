@@ -12,6 +12,14 @@ import type {
 
 const FRIENDS_ENDPOINT = '/friends';
 
+function normalizeUser(user: UserInfo): UserInfo {
+  return {
+    ...user,
+    _id: user._id || user.id || '',
+    id: user.id || user._id || '',
+  };
+}
+
 /**
  * Gửi lời mời kết bạn
  * POST /friends/request { toUserId }
@@ -79,5 +87,8 @@ export async function getFriendList(
   const res = await fetchAPI(
     `${FRIENDS_ENDPOINT}/list?page=${page}&limit=${limit}`,
   );
-  return res.data;
+  return {
+    ...res.data,
+    items: (res.data?.items || []).map(normalizeUser),
+  };
 }
