@@ -89,9 +89,9 @@ export default function ContactsScreen() {
   const loadContacts = useCallback(async () => {
     try {
       const [friendsRes, incomingRes, conversationsRes] = await Promise.all([
-        getFriendList(1, 100),
-        getIncomingFriendRequests(1, 100),
-        getConversations(1, 100),
+        getFriendList(null, 100),
+        getIncomingFriendRequests(null, 100),
+        getConversations(null, 100),
       ]);
       setFriends(friendsRes?.items || []);
       setIncomingRequests(incomingRes?.items || []);
@@ -127,7 +127,7 @@ export default function ContactsScreen() {
     const timeout = setTimeout(async () => {
       setIsSearching(true);
       try {
-        const res = await searchUsers(searchQuery.trim(), 1, 20);
+        const res = await searchUsers(searchQuery.trim(), null, 20);
         const filtered = (res?.items || []).filter((u) => getUserId(u) && getUserId(u) !== user?.id);
         const deduped = Array.from(new Map(filtered.map((u) => [getUserId(u), u])).values());
         setSearchResults(deduped);

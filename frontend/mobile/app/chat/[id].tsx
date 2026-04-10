@@ -149,7 +149,7 @@ export default function ChatScreen() {
       const res = await getMessages({ conversationId, limit: 30 });
       setMessages(res.items);
       setNextCursor(res.nextCursor);
-      const convRes = await getConversations(1, 100);
+      const convRes = await getConversations(null, 100);
       const matched = (convRes.items || []).find((item) => (item._id || item.id) === conversationId) || null;
       setConversation(matched);
     } catch (error) {
@@ -374,7 +374,7 @@ export default function ChatScreen() {
 
   const openForwardModal = async (msg: Message) => {
     try {
-      const res = await getConversations(1, 50);
+      const res = await getConversations(null, 50);
       const targets = (res.items || []).filter((c) => (c._id || c.id) !== conversationId);
       setConversations(targets);
       setForwardSource(msg);
@@ -438,7 +438,7 @@ export default function ChatScreen() {
   const loadCommonGroupsWithUser = async () => {
     if (!otherParticipant) return;
     const otherUserId = getUserId(otherParticipant);
-    const allConversations = conversations.length ? conversations : (await getConversations(1, 100)).items || [];
+    const allConversations = conversations.length ? conversations : (await getConversations(null, 100)).items || [];
     const sharedGroups = allConversations.filter((conv) => {
       if (conv.type !== 'group') return false;
       const participantIds = (conv.participants || []).map((p) => getUserId(p));

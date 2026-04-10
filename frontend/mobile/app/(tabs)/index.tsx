@@ -77,7 +77,7 @@ export default function MessagesScreen() {
 
   const loadConversations = useCallback(async () => {
     try {
-      const res = await getConversations(1, 50);
+      const res = await getConversations(null, 50);
       if (res?.items) {
         setConversations(res.items);
       }
