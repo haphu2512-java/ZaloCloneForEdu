@@ -1,7 +1,8 @@
 import React from 'react';
 import { Ionicons } from '@expo/vector-icons';
-import { Tabs } from 'expo-router';
+import { Tabs, useRouter } from 'expo-router';
 import { View, TouchableOpacity } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import Colors from '@/constants/Colors';
 import { useColorScheme } from '@/components/useColorScheme';
@@ -18,6 +19,8 @@ function TabBarIcon(props: {
 export default function TabLayout() {
   const colorScheme = useColorScheme() ?? 'light';
   const colors = Colors[colorScheme];
+  const router = useRouter();
+  const insets = useSafeAreaInsets();
 
   return (
     <Tabs
@@ -27,8 +30,8 @@ export default function TabLayout() {
         tabBarStyle: {
           backgroundColor: colors.surface,
           borderTopColor: colors.border,
-          height: 60,
-          paddingBottom: 8,
+          height: 56 + insets.bottom,
+          paddingBottom: Math.max(8, insets.bottom),
           paddingTop: 4,
         },
         tabBarLabelStyle: {
@@ -56,10 +59,10 @@ export default function TabLayout() {
           ),
           headerRight: () => (
             <View style={{ flexDirection: 'row', paddingRight: 16, gap: 18 }}>
-              <TouchableOpacity>
+              <TouchableOpacity onPress={() => router.push('/search-messages' as any)}>
                 <Ionicons name="search-outline" size={22} color={colors.text} />
               </TouchableOpacity>
-              <TouchableOpacity>
+              <TouchableOpacity onPress={() => router.push('/create-group' as any)}>
                 <Ionicons name="create-outline" size={22} color={colors.text} />
               </TouchableOpacity>
             </View>

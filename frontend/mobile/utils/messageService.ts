@@ -17,6 +17,22 @@ import type {
 const MESSAGES_ENDPOINT = '/messages';
 const CONVERSATIONS_ENDPOINT = '/conversations';
 
+function normalizeConversation(conversation: Conversation): Conversation {
+  return {
+    ...conversation,
+    _id: conversation._id || conversation.id || '',
+    id: conversation.id || conversation._id || '',
+  };
+}
+
+function normalizeMessage(message: Message): Message {
+  return {
+    ...message,
+    _id: message._id || message.id || '',
+    id: message.id || message._id || '',
+  };
+}
+
 // ==================== CONVERSATIONS ====================
 
 /**
@@ -30,7 +46,10 @@ export async function getConversations(
   const res = await fetchAPI(
     `${CONVERSATIONS_ENDPOINT}?page=${page}&limit=${limit}`,
   );
-  return res.data;
+  return {
+    ...res.data,
+    items: (res.data?.items || []).map(normalizeConversation),
+  };
 }
 
 /**
@@ -44,7 +63,7 @@ export async function createConversation(
     method: 'POST',
     body: JSON.stringify(payload),
   });
-  return res.data;
+  return normalizeConversation(res.data);
 }
 
 // ==================== MESSAGES ====================
@@ -64,7 +83,10 @@ export async function getMessages(
   const res = await fetchAPI(
     `${MESSAGES_ENDPOINT}/conversation/${params.conversationId}${queryStr ? '?' + queryStr : ''}`,
   );
-  return res.data;
+  return {
+    ...res.data,
+    items: (res.data?.items || []).map(normalizeMessage),
+  };
 }
 
 /**
@@ -78,7 +100,7 @@ export async function sendMessage(
     method: 'POST',
     body: JSON.stringify(payload),
   });
-  return res.data;
+  return normalizeMessage(res.data);
 }
 
 /**
@@ -109,7 +131,7 @@ export async function recallMessage(messageId: string): Promise<Message> {
   const res = await fetchAPI(`${MESSAGES_ENDPOINT}/${messageId}/recall`, {
     method: 'PUT',
   });
-  return res.data;
+  return normalizeMessage(res.data);
 }
 
 /**

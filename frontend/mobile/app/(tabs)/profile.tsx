@@ -22,6 +22,7 @@ import * as ImagePicker from 'expo-image-picker';
 import { useAuth } from '@/context/auth';
 import { changePassword, resendVerificationEmail } from '@/utils/authService';
 import { uploadImageToCloudinary } from '@/utils/mediaService';
+import { deleteMyAccount } from '@/utils/userService';
 import { useRouter } from 'expo-router';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
@@ -29,6 +30,7 @@ const { width: SCREEN_WIDTH } = Dimensions.get('window');
 type EditableFields = {
   username: string;
   phone: string;
+  email: string;
   avatarUrl: string;
 };
 
@@ -53,6 +55,7 @@ export default function ProfileScreen() {
   const [editFields, setEditFields] = useState<EditableFields>({
     username: '',
     phone: '',
+    email: '',
     avatarUrl: '',
   });
   const [isUpdating, setIsUpdating] = useState(false);
@@ -61,12 +64,14 @@ export default function ProfileScreen() {
   const [avatarUrl, setAvatarUrl] = useState('');
   const [isUploadingAvatar, setIsUploadingAvatar] = useState(false);
   const [isResendingVerify, setIsResendingVerify] = useState(false);
+  const [isDeletingAccount, setIsDeletingAccount] = useState(false);
 
   useEffect(() => {
     if (user) {
       setEditFields({
         username: user.username || '',
         phone: user.phone || '',
+        email: user.email || '',
         avatarUrl: user.avatarUrl || '',
       });
     }
@@ -95,16 +100,53 @@ export default function ProfileScreen() {
 
   // ==================== EDIT PROFILE ====================
   const handleSaveProfile = async () => {
-    if (!editFields.username.trim() || editFields.username.trim().length < 3) {
+    const nextUsername = editFields.username.trim();
+    const nextPhone = editFields.phone.trim();
+    const nextEmail = editFields.email.trim().toLowerCase();
+
+    if (!nextUsername || nextUsername.length < 3) {
       Alert.alert('Lỗi', 'Username phải có ít nhất 3 ký tự');
       return;
     }
+
+    if (nextEmail && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(nextEmail)) {
+      Alert.alert('Lỗi', 'Email không đúng định dạng');
+      return;
+    }
+
+    if (nextPhone && !/^\d{8,20}$/.test(nextPhone)) {
+      Alert.alert('Lỗi', 'Số điện thoại phải từ 8-20 chữ số');
+      return;
+    }
+
+    const currentUsername = (user?.username || '').trim();
+    const currentPhone = (user?.phone || '').trim();
+    const currentEmail = (user?.email || '').trim().toLowerCase();
+
+    if (
+      nextUsername === currentUsername &&
+      nextPhone === currentPhone &&
+      nextEmail === currentEmail
+    ) {
+      Alert.alert('Thông báo', 'Không có thay đổi để cập nhật');
+      return;
+    }
+
+    const payload: any = {};
+    if (nextUsername !== currentUsername) payload.username = nextUsername;
+    if (nextPhone !== currentPhone) payload.phone = nextPhone || null;
+    if (nextEmail !== currentEmail) payload.email = nextEmail || null;
+
+    if (payload.email) {
+      Alert.alert(
+        'Lưu ý',
+        'Bạn đang thay đổi email. Sau khi cập nhật, hãy xác thực email mới để đảm bảo bảo mật.',
+      );
+    }
+
     setIsUpdating(true);
     try {
-      await updateUser({
-        username: editFields.username.trim(),
-        phone: editFields.phone.trim() || null,
-      });
+      await updateUser(payload);
       setEditModalVisible(false);
       Alert.alert('Thành công ✅', 'Hồ sơ đã được cập nhật!');
     } catch (error: any) {
@@ -223,6 +265,33 @@ export default function ProfileScreen() {
     );
   };
 
+  const handleDeleteAccount = () => {
+    if (!user?.id) return;
+    Alert.alert(
+      'Xóa tài khoản',
+      'Tài khoản sẽ bị vô hiệu hóa (soft delete). Bạn có chắc chắn muốn tiếp tục?',
+      [
+        { text: 'Hủy', style: 'cancel' },
+        {
+          text: 'Xóa',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              setIsDeletingAccount(true);
+              await deleteMyAccount(user.id);
+              await logout();
+              Alert.alert('Thành công', 'Tài khoản đã được xóa');
+            } catch (error: any) {
+              Alert.alert('Lỗi', error.message || 'Không thể xóa tài khoản');
+            } finally {
+              setIsDeletingAccount(false);
+            }
+          },
+        },
+      ],
+    );
+  };
+
   if (!user) {
     return (
       <View style={[styles.container, { backgroundColor: colors.background, justifyContent: 'center', alignItems: 'center' }]}>
@@ -307,7 +376,40 @@ export default function ProfileScreen() {
         <Text style={[styles.sectionTitle, { color: colors.text }]}>Thông tin cá nhân</Text>
 
         <ProfileRow icon="person-outline" label="Username" value={user.username} colors={colors} />
-        <ProfileRow icon="mail-outline" label="Email" value={user.email || 'Chưa cập nhật'} colors={colors} />
+        <TouchableOpacity
+          onPress={() => {
+            if (user.email && !user.isEmailVerified) {
+              handleResendVerifyEmail();
+            }
+          }}
+          disabled={!user.email || user.isEmailVerified}
+          activeOpacity={user.email && !user.isEmailVerified ? 0.6 : 1}
+        >
+          <View style={[styles.profileRow, { borderBottomColor: colors.border }]}>
+            <View style={[styles.profileRowIcon, { backgroundColor: colors.tint + '10' }]}>
+              <Ionicons name="mail-outline" size={18} color={colors.tint} />
+            </View>
+            <View style={{ flex: 1, backgroundColor: 'transparent' }}>
+              <Text style={{ fontSize: 12, color: colors.muted, fontWeight: '500', marginBottom: 2 }}>Email</Text>
+              <Text style={{ fontSize: 15, color: user.email ? colors.text : colors.muted, fontWeight: '500', fontStyle: user.email ? 'normal' : 'italic' }}>
+                {user.email || 'Chưa cập nhật'}
+              </Text>
+            </View>
+            {user.email && (
+              user.isEmailVerified ? (
+                <View style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: '#DCFCE7', borderRadius: 8, paddingHorizontal: 8, paddingVertical: 4 }}>
+                  <Ionicons name="checkmark-circle" size={14} color="#166534" />
+                  <Text style={{ color: '#166534', fontSize: 11, fontWeight: '700', marginLeft: 4 }}>Đã xác thực</Text>
+                </View>
+              ) : (
+                <View style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: '#FEF3C7', borderRadius: 8, paddingHorizontal: 8, paddingVertical: 4 }}>
+                  <Ionicons name="warning" size={14} color="#92400E" />
+                  <Text style={{ color: '#92400E', fontSize: 11, fontWeight: '700', marginLeft: 4 }}>Bấm xác thực</Text>
+                </View>
+              )
+            )}
+          </View>
+        </TouchableOpacity>
         <ProfileRow
           icon="call-outline"
           label="Số điện thoại"
@@ -388,17 +490,36 @@ export default function ProfileScreen() {
           }}
           color="#F59E0B"
         />
+        <MenuItem
+          ionIcon="folder-open-outline"
+          title="Media Manager"
+          subtitle="Tra cứu và xóa media theo ID"
+          onPress={() => router.push('/media-manager' as any)}
+          color="#0EA5E9"
+        />
       </View>
 
       {/* ==================== OTHER SETTINGS ==================== */}
       <View style={[styles.sectionContainer, { backgroundColor: colors.surface }]}>
         <Text style={[styles.sectionTitle, { color: colors.text }]}>Khác</Text>
 
-        <MenuItem ionIcon="notifications-outline" title="Thông báo" color={colors.text} />
+        <MenuItem
+          ionIcon="notifications-outline"
+          title="Thông báo"
+          subtitle="Xem và đánh dấu đã đọc"
+          onPress={() => router.push('/notifications' as any)}
+          color={colors.text}
+        />
         <MenuItem
           ionIcon="information-circle-outline"
           title="Về ứng dụng"
           subtitle="Phiên bản 1.0.0"
+          onPress={() =>
+            Alert.alert(
+              'Về ứng dụng',
+              'Zalo Edu Mobile\nPhiên bản 1.0.0',
+            )
+          }
           color={colors.text}
         />
       </View>
@@ -410,6 +531,14 @@ export default function ProfileScreen() {
           title="Đăng xuất"
           onPress={handleLogout}
           color={colors.error}
+          showChevron={false}
+        />
+        <MenuItem
+          ionIcon="trash-outline"
+          title={isDeletingAccount ? 'Đang xóa tài khoản...' : 'Xóa tài khoản'}
+          subtitle="Thao tác này sẽ đăng xuất và vô hiệu hóa tài khoản"
+          onPress={isDeletingAccount ? undefined : handleDeleteAccount}
+          color="#DC2626"
           showChevron={false}
         />
       </View>
@@ -446,6 +575,15 @@ export default function ProfileScreen() {
               value={editFields.username}
               onChangeText={(v: string) => setEditFields({ ...editFields, username: v })}
               placeholder="Nhập username (ít nhất 3 ký tự)"
+              autoCapitalize="none"
+              colors={colors}
+            />
+            <ModalInput
+              label="Email"
+              value={editFields.email}
+              onChangeText={(v: string) => setEditFields({ ...editFields, email: v })}
+              placeholder="Nhập email"
+              keyboardType="email-address"
               autoCapitalize="none"
               colors={colors}
             />

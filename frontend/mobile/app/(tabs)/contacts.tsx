@@ -17,14 +17,18 @@ import Colors from '@/constants/Colors';
 import { useColorScheme } from '@/components/useColorScheme';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '@/context/auth';
+import { useRouter } from 'expo-router';
+import { createConversation } from '@/utils/messageService';
 import {
   getFriendList,
   sendFriendRequest,
   getIncomingFriendRequests,
   acceptFriendRequest,
   rejectFriendRequest,
+  removeFriend,
 } from '@/utils/friendService';
 import { searchUsers } from '@/utils/searchService';
+import { blockOrUnblockUser } from '@/utils/userService';
 import type { UserInfo, FriendRequest } from '@/types/chat';
 
 type ContactTab = 'friends' | 'groups' | 'oa';
@@ -33,7 +37,8 @@ type FilterTab = 'all' | 'recent';
 export default function ContactsScreen() {
   const colorScheme = useColorScheme() ?? 'light';
   const colors = Colors[colorScheme];
-  const { user } = useAuth();
+  const { user, setUser } = useAuth();
+  const router = useRouter();
 
   const brand = colors.tint;
   const headerBg = colorScheme === 'dark' ? '#1F2937' : brand;
@@ -121,6 +126,22 @@ export default function ContactsScreen() {
     }
   };
 
+  const handleToggleBlock = async (targetUserId: string) => {
+    if (!targetUserId || !user) return;
+    const isBlocked = (user.blockedUsers || []).includes(targetUserId);
+    const action = isBlocked ? 'unblock' : 'block';
+    try {
+      const result = await blockOrUnblockUser(targetUserId, action);
+      setUser((prev) => (prev ? { ...prev, blockedUsers: result.blockedUsers || [] } : prev));
+      Alert.alert(
+        'Thành công',
+        action === 'block' ? 'Đã chặn người dùng' : 'Đã bỏ chặn người dùng',
+      );
+    } catch (error: any) {
+      Alert.alert('Lỗi', error.message || 'Không thể cập nhật trạng thái chặn');
+    }
+  };
+
   const getRequestSender = (request: FriendRequest): UserInfo | null => {
     const sender = request.fromUserId;
     if (!sender || typeof sender === 'string') return null;
@@ -145,6 +166,40 @@ export default function ContactsScreen() {
 
   const isFriend = (userId: string) => friends.some((f) => getUserId(f) === userId);
 
+  const handleStartChat = async (userId: string) => {
+    try {
+      const conv = await createConversation({
+        type: 'direct',
+        participantIds: [userId]
+      });
+      // Handle the case where _id might be id depending on the backend response
+      const convId = conv._id || conv.id;
+      router.push(`/chat/${convId}`);
+    } catch (error: any) {
+      Alert.alert('Lỗi', error.message || 'Không thể tạo cuộc trò chuyện');
+    }
+  };
+
+  const handleRemoveFriend = async (friendId: string) => {
+    if (!friendId) return;
+    Alert.alert('Xóa bạn', 'Bạn có chắc muốn xóa người bạn này?', [
+      { text: 'Hủy', style: 'cancel' },
+      {
+        text: 'Xóa',
+        style: 'destructive',
+        onPress: async () => {
+          try {
+            await removeFriend(friendId);
+            await loadContacts();
+            Alert.alert('Thành công', 'Đã xóa bạn');
+          } catch (error: any) {
+            Alert.alert('Lỗi', error.message || 'Không thể xóa bạn');
+          }
+        },
+      },
+    ]);
+  };
+
   const filteredFriends = useMemo(() => {
     if (activeFilter === 'all') return friends;
     return friends.filter((f) => !!f.isOnline);
@@ -167,6 +222,7 @@ export default function ContactsScreen() {
 
   const renderSearchUserItem = ({ item }: { item: UserInfo }) => {
     const uid = getUserId(item);
+    const isBlocked = (user?.blockedUsers || []).includes(uid);
     return (
       <View style={[styles.userRow, { backgroundColor: colors.surface }]}>
         <Image
@@ -182,9 +238,19 @@ export default function ContactsScreen() {
           <Text style={{ fontSize: 13, color: colors.muted }}>{item.email || item.phone || 'Người dùng'}</Text>
         </View>
         {!isFriend(uid) ? (
-          <TouchableOpacity style={[styles.actionBtn, { backgroundColor: brand }]} onPress={() => handleAddFriend(uid)}>
-            <Text style={{ color: '#fff', fontWeight: '700', fontSize: 12 }}>Kết bạn</Text>
-          </TouchableOpacity>
+          <View style={{ gap: 8, backgroundColor: 'transparent' }}>
+            <TouchableOpacity style={[styles.actionBtn, { backgroundColor: brand }]} onPress={() => handleAddFriend(uid)}>
+              <Text style={{ color: '#fff', fontWeight: '700', fontSize: 12 }}>Kết bạn</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.actionBtn, { backgroundColor: isBlocked ? '#16A34A' : '#DC2626' }]}
+              onPress={() => handleToggleBlock(uid)}
+            >
+              <Text style={{ color: '#fff', fontWeight: '700', fontSize: 12 }}>
+                {isBlocked ? 'Bỏ chặn' : 'Chặn'}
+              </Text>
+            </TouchableOpacity>
+          </View>
         ) : (
           <View style={[styles.badge, { backgroundColor: '#DCFCE7' }]}>
             <Text style={{ color: '#166534', fontWeight: '700', fontSize: 12 }}>Bạn bè</Text>
@@ -195,7 +261,11 @@ export default function ContactsScreen() {
   };
 
   const renderFriendItem = ({ item }: { item: UserInfo }) => (
-    <View style={[styles.userRow, { backgroundColor: colors.surface }]}>
+    <TouchableOpacity
+      style={[styles.userRow, { backgroundColor: colors.surface }]}
+      onPress={() => handleStartChat(getUserId(item))}
+      onLongPress={() => handleRemoveFriend(getUserId(item))}
+    >
       <Image
         source={{
           uri:
@@ -207,13 +277,19 @@ export default function ContactsScreen() {
       <View style={{ flex: 1, backgroundColor: 'transparent' }}>
         <Text style={[styles.userName, { color: colors.text }]}>{item.username}</Text>
       </View>
-      <TouchableOpacity style={styles.iconBtn}>
+      <TouchableOpacity
+        style={styles.iconBtn}
+        onPress={() => Alert.alert('Thông báo', 'Chức năng gọi thoại sẽ được cập nhật sớm')}
+      >
         <Ionicons name="call-outline" size={22} color={colors.muted} />
       </TouchableOpacity>
-      <TouchableOpacity style={styles.iconBtn}>
+      <TouchableOpacity
+        style={styles.iconBtn}
+        onPress={() => Alert.alert('Thông báo', 'Chức năng gọi video sẽ được cập nhật sớm')}
+      >
         <Ionicons name="videocam-outline" size={22} color={colors.muted} />
       </TouchableOpacity>
-    </View>
+    </TouchableOpacity>
   );
 
   const renderSectionHeader = ({ section }: { section: { title: string } }) => (
@@ -244,7 +320,9 @@ export default function ContactsScreen() {
             value={searchQuery}
             onChangeText={setSearchQuery}
           />
-          <Ionicons name="person-add-outline" size={22} color="#E5E7EB" />
+          <TouchableOpacity onPress={() => setRequestModalVisible(true)}>
+            <Ionicons name="person-add-outline" size={22} color="#E5E7EB" />
+          </TouchableOpacity>
         </View>
       </View>
 
@@ -446,7 +524,7 @@ const styles = StyleSheet.create({
     borderBottomColor: 'transparent',
   },
   topTabText: {
-    fontSize: 18,
+    fontSize: 16,
     fontWeight: '600',
   },
 
@@ -465,7 +543,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   featureText: {
-    fontSize: 19,
+    fontSize: 16,
     fontWeight: '500',
   },
   divider: {
@@ -495,8 +573,8 @@ const styles = StyleSheet.create({
     paddingBottom: 6,
   },
   sectionHeaderText: {
-    fontSize: 34,
-    fontWeight: '400',
+    fontSize: 16,
+    fontWeight: '600',
   },
 
   userRow: {
@@ -512,7 +590,7 @@ const styles = StyleSheet.create({
     marginRight: 14,
   },
   userName: {
-    fontSize: 18,
+    fontSize: 16,
     fontWeight: '500',
   },
   iconBtn: {

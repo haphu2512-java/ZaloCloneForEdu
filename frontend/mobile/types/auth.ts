@@ -60,6 +60,7 @@ export interface RegisterPayload {
 /** PUT /users/:id body */
 export interface UpdateProfilePayload {
   username?: string;
+  email?: string | null;
   phone?: string | null;
   avatarUrl?: string | null;
 }

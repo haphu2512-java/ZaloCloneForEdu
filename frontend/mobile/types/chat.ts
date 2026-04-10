@@ -37,6 +37,7 @@ export interface SenderInfo {
 /** Backend Conversation model */
 export interface Conversation {
   _id: string;
+  id?: string;
   type: ConversationType;
   name?: string | null;
   participants: UserInfo[];
@@ -65,6 +66,7 @@ export interface Attachment {
 /** Backend Message model */
 export interface Message {
   _id: string;
+  id?: string;
   conversationId: string | { _id: string };
   senderId: SenderInfo | string;
   /** Legacy sender field for older UI components */
@@ -95,6 +97,7 @@ export interface Message {
 /** Backend FriendRequest model */
 export interface FriendRequest {
   _id: string;
+  id?: string;
   fromUserId: string | UserInfo;
   toUserId: string | UserInfo;
   status: 'pending' | 'accepted' | 'rejected';
@@ -159,4 +162,33 @@ export interface ConversationListItem extends Conversation {
   displayName?: string;
   /** Computed avatar */
   displayAvatar?: string | null;
+}
+
+export interface NotificationItem {
+  _id: string;
+  id?: string;
+  userId: string;
+  type: string;
+  title: string;
+  body: string;
+  data?: Record<string, unknown>;
+  isRead: boolean;
+  readAt?: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface MediaItem {
+  _id: string;
+  id?: string;
+  uploaderId: string;
+  fileName: string;
+  mimeType: string;
+  size: number;
+  storage: 'local' | 'cloudinary';
+  url: string;
+  providerPublicId?: string | null;
+  providerResourceType?: string | null;
+  createdAt: string;
+  updatedAt: string;
 }

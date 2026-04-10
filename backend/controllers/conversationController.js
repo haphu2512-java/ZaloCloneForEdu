@@ -39,27 +39,22 @@ const listConversations = asyncHandler(async (req, res) => {
   }
 
   const conversationIds = conversations.map((conversation) => conversation._id);
-  const groupedLatest = await Message.aggregate([
-    { $match: { conversationId: { $in: conversationIds } } },
-    { $sort: { conversationId: 1, createdAt: -1, _id: -1 } },
-    { $group: { _id: '$conversationId', latestMessage: { $first: '$$ROOT' } } },
-  ]);
+  
+  const latestMessagePromises = conversationIds.map((cid) => 
+    Message.findOne({ conversationId: cid, deletedBy: { $ne: req.user._id } })
+      .sort({ createdAt: -1, _id: -1 })
+      .populate('senderId', 'username avatarUrl')
+  );
+  
+  const latestMessagesArr = await Promise.all(latestMessagePromises);
 
-  const latestMessages = groupedLatest.map((item) => item.latestMessage);
-  await Message.populate(latestMessages, {
-    path: 'senderId',
-    select: 'username',
+  const items = conversations.map((conversation, index) => {
+    const latest = latestMessagesArr[index];
+    return {
+      ...conversation.toObject(),
+      latestMessage: latest ? latest.toObject() : null,
+    };
   });
-
-  const latestByConversation = new Map();
-  for (const message of latestMessages) {
-    latestByConversation.set(message.conversationId.toString(), message);
-  }
-
-  const items = conversations.map((conversation) => ({
-    ...conversation.toObject(),
-    latestMessage: latestByConversation.get(conversation._id.toString()) || null,
-  }));
 
   return successResponse(
     res,

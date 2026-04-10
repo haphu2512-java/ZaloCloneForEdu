@@ -1,4 +1,5 @@
 import { fetchAPI } from './api';
+import type { MediaItem } from '../types/chat';
 
 type CloudinarySignature = {
   cloudName: string;
@@ -57,4 +58,15 @@ export async function uploadImageToCloudinary(localUri: string): Promise<string>
   });
 
   return uploadData?.secure_url || uploadData?.url;
+}
+
+export async function getMediaById(mediaId: string): Promise<MediaItem> {
+  const res = await fetchAPI(`/media/${mediaId}`);
+  return res.data;
+}
+
+export async function deleteMediaById(mediaId: string): Promise<void> {
+  await fetchAPI(`/media/${mediaId}`, {
+    method: 'DELETE',
+  });
 }

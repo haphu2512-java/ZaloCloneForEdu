@@ -62,7 +62,7 @@ const register = asyncHandler(async (req, res) => {
     username: finalUsername,
     email: email ? email.toLowerCase() : undefined,
     passwordHash,
-    phone: phone || null,
+    phone: phone || undefined,
     emailVerificationToken,
     emailVerificationExpires,
   });
@@ -178,7 +178,7 @@ const forgotPassword = asyncHandler(async (req, res) => {
     return successResponse(res, {}, 'If your account exists, a reset instruction has been sent');
   }
 
-  const resetToken = crypto.randomBytes(32).toString('hex');
+  const resetToken = createEmailOtp();
   user.resetPasswordToken = crypto.createHash('sha256').update(resetToken).digest('hex');
   user.resetPasswordExpires = new Date(Date.now() + 10 * 60 * 1000); // 10 minutes
 
@@ -187,8 +187,9 @@ const forgotPassword = asyncHandler(async (req, res) => {
   if (email) {
     await sendEmail({
       to: user.email,
-      subject: 'Password Reset Request',
-      text: `You requested a password reset. Your reset token is: ${resetToken}\nUse this in the app. Token expires in 10 minutes.`,
+      subject: 'Mã OTP đặt lại mật khẩu - Zalo Clone',
+      text: `Bạn đã yêu cầu đặt lại mật khẩu. Mã OTP của bạn là: ${resetToken}\nSử dụng mã này trong ứng dụng. Mã có hiệu lực trong 10 phút.`,
+      html: `<p>Bạn đã yêu cầu đặt lại mật khẩu. Mã OTP của bạn là: <strong>${resetToken}</strong></p><p>Mã có hiệu lực trong 10 phút.</p>`,
     });
   } else if (phone) {
     // Implement SMS sending here or log

@@ -7,7 +7,6 @@ import {
   FlatList,
   KeyboardAvoidingView,
   Platform,
-  SafeAreaView,
   ActivityIndicator,
   Alert,
   ActionSheetIOS,
@@ -15,13 +14,17 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import * as DocumentPicker from 'expo-document-picker';
+import * as FileSystem from 'expo-file-system/legacy';
 import { Stack, useLocalSearchParams, useRouter } from 'expo-router';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useAuth } from '../../context/auth';
 import {
   getMessages,
   sendMessage,
+  markMessageRead,
   deleteMessage,
   recallMessage,
+  reactToMessage,
   uploadMedia,
   getConversations,
 } from '../../utils/messageService';
@@ -35,6 +38,15 @@ function getMessageSenderId(msg: Message): string {
   return msg.senderId?._id || '';
 }
 
+function getMessageId(msg: Message): string {
+  return msg._id || msg.id || '';
+}
+
+function getConversationIdFromMessage(msg: Message): string {
+  if (typeof msg.conversationId === 'string') return msg.conversationId;
+  return (msg.conversationId as any)?._id || '';
+}
+
 function getConversationTitle(conv: Conversation, currentUserId: string) {
   if (conv.type === 'group') return conv.name || 'Nhóm chat';
   const otherUser = conv.participants?.find((p) => (p._id || p.id) !== currentUserId);
@@ -45,6 +57,7 @@ export default function ChatScreen() {
   const { id: conversationId } = useLocalSearchParams<{ id: string }>();
   const router = useRouter();
   const { user } = useAuth();
+  const insets = useSafeAreaInsets();
 
   const [messages, setMessages] = useState<Message[]>([]);
   const [inputText, setInputText] = useState('');
@@ -96,18 +109,59 @@ export default function ChatScreen() {
       const onDisconnect = () => setIsSocketReady(false);
 
       const onNewMessage = (message: Message) => {
-        const messageConversationId =
-          typeof message.conversationId === 'string'
-            ? message.conversationId
-            : (message.conversationId as any)?._id;
+        const messageConversationId = getConversationIdFromMessage(message);
         if (messageConversationId !== conversationId) return;
-        setMessages((prev) => (prev.some((m) => m._id === message._id) ? prev : [message, ...prev]));
+        setMessages((prev) =>
+          prev.some((m) => getMessageId(m) === getMessageId(message))
+            ? prev
+            : [message, ...prev],
+        );
+        if (getMessageSenderId(message) !== user?.id) {
+          markMessageRead(getMessageId(message)).catch(() => null);
+        }
       };
 
       const onMessageRecalled = (payload: { messageId: string; conversationId: string }) => {
         if (payload.conversationId !== conversationId) return;
         setMessages((prev) =>
-          prev.map((m) => (m._id === payload.messageId ? { ...m, isRecalled: true } : m)),
+          prev.map((m) => (getMessageId(m) === payload.messageId ? { ...m, isRecalled: true } : m)),
+        );
+      };
+
+      const onMessageSeen = (payload: { messageId: string; userId: string }) => {
+        setMessages((prev) =>
+          prev.map((m) =>
+            getMessageId(m) === payload.messageId
+              ? {
+                  ...m,
+                  seenBy: Array.from(new Set([...(m.seenBy || []), payload.userId])),
+                  deliveredTo: Array.from(new Set([...(m.deliveredTo || []), payload.userId])),
+                }
+              : m,
+          ),
+        );
+      };
+
+      const onMessageDelivered = (payload: { messageId: string; userId: string }) => {
+        setMessages((prev) =>
+          prev.map((m) =>
+            getMessageId(m) === payload.messageId
+              ? {
+                  ...m,
+                  deliveredTo: Array.from(new Set([...(m.deliveredTo || []), payload.userId])),
+                }
+              : m,
+          ),
+        );
+      };
+
+      const onMessageReacted = (payload: { messageId: string; reactions: Message['reactions'] }) => {
+        setMessages((prev) =>
+          prev.map((m) =>
+            getMessageId(m) === payload.messageId
+              ? { ...m, reactions: payload.reactions || [] }
+              : m,
+          ),
         );
       };
 
@@ -115,12 +169,18 @@ export default function ChatScreen() {
       socket.on('disconnect', onDisconnect);
       socket.on('new_message', onNewMessage);
       socket.on('message_recalled', onMessageRecalled);
+      socket.on('message_seen', onMessageSeen);
+      socket.on('message_delivered', onMessageDelivered);
+      socket.on('message_reacted', onMessageReacted);
 
       return () => {
         socket.off('connect', onConnect);
         socket.off('disconnect', onDisconnect);
         socket.off('new_message', onNewMessage);
         socket.off('message_recalled', onMessageRecalled);
+        socket.off('message_seen', onMessageSeen);
+        socket.off('message_delivered', onMessageDelivered);
+        socket.off('message_reacted', onMessageReacted);
       };
     };
 
@@ -133,16 +193,23 @@ export default function ChatScreen() {
       if (socketRef) {
         socketRef.off('new_message');
         socketRef.off('message_recalled');
+        socketRef.off('message_seen');
+        socketRef.off('message_delivered');
+        socketRef.off('message_reacted');
       }
     };
-  }, [conversationId]);
+  }, [conversationId, user?.id]);
 
   const loadMoreMessages = async () => {
     if (!nextCursor || isFetchingMore) return;
     setIsFetchingMore(true);
     try {
       const res = await getMessages({ conversationId, limit: 20, cursor: nextCursor });
-      setMessages((prev) => [...prev, ...res.items]);
+      setMessages((prev) => {
+        const existing = new Set(prev.map((m) => getMessageId(m)));
+        const incoming = (res.items || []).filter((m) => !existing.has(getMessageId(m)));
+        return [...prev, ...incoming];
+      });
       setNextCursor(res.nextCursor);
     } catch (error) {
       console.log('Error loading more messages', error);
@@ -151,19 +218,9 @@ export default function ChatScreen() {
     }
   };
 
-  const ensureConnectedBeforeChat = () => {
-    const socket = getSocket();
-    if (!socket || !socket.connected) {
-      Alert.alert('Đang kết nối', 'Vui lòng chờ kết nối chat được thiết lập rồi gửi lại.');
-      return false;
-    }
-    return true;
-  };
-
   const handleSendText = async () => {
     const text = inputText.trim();
     if (!text) return;
-    if (!ensureConnectedBeforeChat()) return;
 
     setIsSending(true);
     try {
@@ -171,7 +228,15 @@ export default function ChatScreen() {
         conversationId,
         content: text,
       });
-      setMessages((prev) => (prev.some((m) => m._id === newMsg._id) ? prev : [newMsg, ...prev]));
+      setMessages((prev) =>
+        prev.some((m) => getMessageId(m) === getMessageId(newMsg))
+          ? prev
+          : [newMsg, ...prev],
+      );
+      const socket = getSocket();
+      if (!socket?.connected) {
+        Alert.alert('Đã gửi qua API', 'Tin nhắn đã gửi. Realtime sẽ đồng bộ khi socket kết nối lại.');
+      }
       setInputText('');
       setShowEmojiPanel(false);
     } catch (error) {
@@ -182,16 +247,16 @@ export default function ChatScreen() {
   };
 
   const handleDocumentPick = async () => {
-    if (!ensureConnectedBeforeChat()) return;
     try {
-      const result = await DocumentPicker.getDocumentAsync({});
+      const result = await DocumentPicker.getDocumentAsync({
+        copyToCacheDirectory: true,
+      });
       if (result.canceled || !result.assets?.length) return;
 
       const asset = result.assets[0];
       setIsSending(true);
 
       try {
-        const FileSystem = require('expo-file-system');
         const base64 = await FileSystem.readAsStringAsync(asset.uri, {
           encoding: FileSystem.EncodingType.Base64,
         });
@@ -207,7 +272,15 @@ export default function ChatScreen() {
           mediaIds: [media._id],
           content: `Đã gửi file: ${asset.name}`,
         });
-        setMessages((prev) => (prev.some((m) => m._id === newMsg._id) ? prev : [newMsg, ...prev]));
+        setMessages((prev) =>
+          prev.some((m) => getMessageId(m) === getMessageId(newMsg))
+            ? prev
+            : [newMsg, ...prev],
+        );
+        const socket = getSocket();
+        if (!socket?.connected) {
+          Alert.alert('Đã gửi file', 'File đã gửi qua API. Realtime sẽ cập nhật khi socket ổn định.');
+        }
       } catch (uploadErr) {
         console.log(uploadErr);
         Alert.alert('Lỗi', 'Không thể tải lên file');
@@ -222,7 +295,7 @@ export default function ChatScreen() {
   const openForwardModal = async (msg: Message) => {
     try {
       const res = await getConversations(1, 50);
-      const targets = (res.items || []).filter((c) => c._id !== conversationId);
+      const targets = (res.items || []).filter((c) => (c._id || c.id) !== conversationId);
       setConversations(targets);
       setForwardSource(msg);
       setForwardModalVisible(true);
@@ -235,13 +308,13 @@ export default function ChatScreen() {
     if (!forwardSource) return;
     setIsForwarding(true);
     try {
-      const fallbackContent =
+        const fallbackContent =
         forwardSource.content?.trim() || (forwardSource.mediaIds?.length ? 'Tin nhắn được chuyển tiếp' : '');
       await sendMessage({
         conversationId: targetConversationId,
         content: fallbackContent || 'Tin nhắn được chuyển tiếp',
         mediaIds: forwardSource.mediaIds || [],
-        forwardFrom: forwardSource._id,
+        forwardFrom: getMessageId(forwardSource),
       });
       setForwardModalVisible(false);
       setForwardSource(null);
@@ -253,6 +326,35 @@ export default function ChatScreen() {
     }
   };
 
+  const handleReactToMessage = async (msg: Message) => {
+    const options = [...QUICK_EMOJIS, 'Gỡ cảm xúc', 'Hủy'];
+    Alert.alert(
+      'Chọn cảm xúc',
+      '',
+      options.map((emoji) => ({
+        text: emoji,
+        onPress: async () => {
+          if (emoji === 'Hủy') return;
+          try {
+            const reactions = await reactToMessage(
+              getMessageId(msg),
+              emoji === 'Gỡ cảm xúc' ? undefined : emoji,
+            );
+            setMessages((prev) =>
+              prev.map((m) =>
+                getMessageId(m) === getMessageId(msg)
+                  ? { ...m, reactions: reactions || [] }
+                  : m,
+              ),
+            );
+          } catch (_e) {
+            Alert.alert('Lỗi', 'Không thể thả cảm xúc');
+          }
+        },
+      })),
+    );
+  };
+
   const handleMessageLongPress = (msg: Message) => {
     const isMine = getMessageSenderId(msg) === user?.id;
     const options = ['Hủy'];
@@ -262,8 +364,10 @@ export default function ChatScreen() {
       options.push('Thu hồi tin nhắn');
       actions.push(async () => {
         try {
-          await recallMessage(msg._id);
-          setMessages((prev) => prev.map((m) => (m._id === msg._id ? { ...m, isRecalled: true } : m)));
+          await recallMessage(getMessageId(msg));
+          setMessages((prev) =>
+            prev.map((m) => (getMessageId(m) === getMessageId(msg) ? { ...m, isRecalled: true } : m)),
+          );
         } catch (_e) {
           Alert.alert('Lỗi', 'Không thể thu hồi tin nhắn');
         }
@@ -274,11 +378,18 @@ export default function ChatScreen() {
       options.push('Xóa tin nhắn phía tôi');
       actions.push(async () => {
         try {
-          await deleteMessage(msg._id);
-          setMessages((prev) => prev.filter((m) => m._id !== msg._id));
+          await deleteMessage(getMessageId(msg));
+          setMessages((prev) => prev.filter((m) => getMessageId(m) !== getMessageId(msg)));
         } catch (_e) {
           Alert.alert('Lỗi', 'Không thể xóa tin nhắn');
         }
+      });
+    }
+
+    if (!msg.isRecalled) {
+      options.push('Thả cảm xúc');
+      actions.push(() => {
+        handleReactToMessage(msg);
       });
     }
 
@@ -344,6 +455,11 @@ export default function ChatScreen() {
           <Text style={{ color: isMine ? '#DBEAFE' : '#64748B', fontSize: 12, marginBottom: 6 }}>Tin nhắn chuyển tiếp</Text>
         )}
         {item.content ? <Text style={{ color: isMine ? '#fff' : '#0F172A', fontSize: 16 }}>{item.content}</Text> : null}
+        {!!item.reactions?.length && (
+          <Text style={{ marginTop: 6, color: isMine ? '#DBEAFE' : '#475569', fontSize: 13 }}>
+            {item.reactions.map((r) => r.emoji).join(' ')}
+          </Text>
+        )}
         {!!item.mediaIds?.length && (
           <Text style={{ marginTop: 6, color: isMine ? '#DBEAFE' : '#475569', fontSize: 12 }}>
             Đính kèm {item.mediaIds.length} file
@@ -366,9 +482,11 @@ export default function ChatScreen() {
       <Stack.Screen
         options={{
           title: 'Trò chuyện',
+          headerShown: true,
+          headerBackVisible: false,
           headerLeft: () => (
-            <TouchableOpacity onPress={() => router.back()} style={{ marginLeft: 8 }}>
-              <Ionicons name="arrow-back" size={24} color="#0F172A" />
+            <TouchableOpacity onPress={() => router.back()} style={{ padding: 8, marginLeft: 4 }}>
+              <Ionicons name="arrow-back" size={26} color="#0F172A" />
             </TouchableOpacity>
           ),
         }}
@@ -382,13 +500,14 @@ export default function ChatScreen() {
 
       <KeyboardAvoidingView
         style={{ flex: 1 }}
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        behavior="padding"
         keyboardVerticalOffset={Platform.OS === 'ios' ? 90 : 0}
       >
         <FlatList
           data={messages}
-          keyExtractor={(item) => item._id}
+          keyExtractor={(item) => getMessageId(item)}
           renderItem={renderMessage}
+          keyboardShouldPersistTaps="handled"
           inverted
           onEndReached={loadMoreMessages}
           onEndReachedThreshold={0.5}
@@ -414,6 +533,7 @@ export default function ChatScreen() {
             flexDirection: 'row',
             alignItems: 'center',
             padding: 12,
+            paddingBottom: Math.max(12, insets.bottom),
             borderTopWidth: 1,
             borderTopColor: '#E2E8F0',
             backgroundColor: '#F8FAFC',
@@ -448,13 +568,13 @@ export default function ChatScreen() {
 
           <TouchableOpacity
             onPress={handleSendText}
-            disabled={isSending || inputText.trim().length === 0 || !isSocketReady}
+            disabled={isSending || inputText.trim().length === 0}
             style={{
               marginLeft: 12,
               width: 44,
               height: 44,
               borderRadius: 22,
-              backgroundColor: inputText.trim().length > 0 && isSocketReady ? '#3B82F6' : '#CBD5E1',
+              backgroundColor: inputText.trim().length > 0 ? '#3B82F6' : '#CBD5E1',
               alignItems: 'center',
               justifyContent: 'center',
             }}
@@ -485,7 +605,7 @@ export default function ChatScreen() {
             renderItem={({ item }) => (
               <TouchableOpacity
                 disabled={isForwarding}
-                onPress={() => handleForward(item._id)}
+                onPress={() => handleForward(item._id || item.id || '')}
                 style={{ paddingHorizontal: 16, paddingVertical: 14, borderBottomWidth: 1, borderBottomColor: '#F1F5F9' }}
               >
                 <Text style={{ fontSize: 16, color: '#0F172A' }}>{getConversationTitle(item, user?.id || '')}</Text>

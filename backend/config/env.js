@@ -45,5 +45,5 @@ module.exports = {
   // In development, default to Ethereal unless explicitly disabled.
   smtpUseEthereal:
     process.env.SMTP_USE_ETHEREAL === 'true'
-    || (process.env.SMTP_USE_ETHEREAL !== 'false' && (process.env.NODE_ENV || 'development') === 'development'),
+    || (process.env.SMTP_USE_ETHEREAL !== 'false' && (process.env.NODE_ENV || 'development') !== 'production'),
 };

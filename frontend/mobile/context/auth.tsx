@@ -6,7 +6,7 @@ import type { User, LoginPayload, RegisterPayload, UpdateProfilePayload } from '
 interface AuthContextType {
   user: User | null;
   isLoading: boolean;
-  login: (payload: LoginPayload) => Promise<void>;
+  login: (payload: LoginPayload) => Promise<User>;
   register: (payload: RegisterPayload) => Promise<void>;
   logout: () => Promise<void>;
   updateUser: (data: UpdateProfilePayload) => Promise<void>;
@@ -17,7 +17,9 @@ interface AuthContextType {
 const AuthContext = createContext<AuthContextType>({
   user: null,
   isLoading: true,
-  login: async () => {},
+  login: async () => {
+    throw new Error('AuthProvider not mounted');
+  },
   register: async () => {},
   logout: async () => {},
   updateUser: async () => {},
@@ -80,13 +82,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
     const inAuthGroup = segments[0] === ('(auth)' as any);
     const currentAuthScreen = segments[1] as string | undefined;
-    const requiresEmailVerification = Boolean(user?.email) && !user?.isEmailVerified;
     const isVerifyScreen = currentAuthScreen === 'verify-email';
 
     if (!user && !inAuthGroup) {
       router.replace('/(auth)/login' as any);
     } else if (user && inAuthGroup) {
-      if (!requiresEmailVerification && !isVerifyScreen) {
+      if (!isVerifyScreen) {
         router.replace('/(tabs)' as any);
       }
     }
@@ -96,6 +97,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     const res = await authService.login(payload);
     if (!res.user) throw new Error('ÄÄƒng nháº­p tháº¥t báº¡i');
     setUser(res.user);
+    return res.user;
   };
 
   const register = async (payload: RegisterPayload) => {

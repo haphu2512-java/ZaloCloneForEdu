@@ -2,6 +2,18 @@ const User = require('../models/User');
 const asyncHandler = require('../utils/asyncHandler');
 const ApiError = require('../utils/apiError');
 const { successResponse } = require('../utils/apiResponse');
+const { sendEmail } = require('../utils/email');
+
+const createEmailOtp = () => String(Math.floor(100000 + Math.random() * 900000));
+
+const sendVerificationOtp = async ({ email, otp }) => {
+  await sendEmail({
+    to: email,
+    subject: 'Mã OTP xác thực email - Zalo Clone',
+    text: `Mã OTP xác thực email của bạn là: ${otp}. Mã có hiệu lực trong 10 phút.`,
+    html: `<p>Mã OTP xác thực email của bạn là: <strong>${otp}</strong></p><p>Mã có hiệu lực trong 10 phút.</p>`,
+  });
+};
 
 const getUserById = asyncHandler(async (req, res) => {
   const user = await User.findById(req.params.id).select('-passwordHash -tokenVersion');
@@ -16,13 +28,56 @@ const updateUserById = asyncHandler(async (req, res) => {
     throw new ApiError(403, 'FORBIDDEN', 'You can only update your own profile');
   }
 
-  const updates = req.body;
-  const user = await User.findByIdAndUpdate(req.params.id, updates, { new: true }).select('-passwordHash -tokenVersion');
+  const user = await User.findById(req.params.id);
   if (!user || user.deletedAt) {
     throw new ApiError(404, 'USER_NOT_FOUND', 'User not found');
   }
 
-  return successResponse(res, user, 'User updated');
+  const updates = req.body || {};
+  if (typeof updates.username === 'string') {
+    user.username = updates.username.trim();
+  }
+  if (typeof updates.phone !== 'undefined') {
+    user.phone = updates.phone || null;
+  }
+  if (typeof updates.avatarUrl !== 'undefined') {
+    user.avatarUrl = updates.avatarUrl || null;
+  }
+
+  if (typeof updates.email !== 'undefined') {
+    const nextEmail = updates.email ? String(updates.email).trim().toLowerCase() : null;
+    const currentEmail = user.email ? String(user.email).trim().toLowerCase() : null;
+
+    if (nextEmail && nextEmail !== currentEmail) {
+      const duplicated = await User.findOne({
+        _id: { $ne: user._id },
+        email: nextEmail,
+        deletedAt: null,
+      });
+      if (duplicated) {
+        throw new ApiError(409, 'EMAIL_EXISTS', 'Email already exists');
+      }
+
+      user.email = nextEmail;
+      user.isEmailVerified = false;
+      user.emailVerificationToken = createEmailOtp();
+      user.emailVerificationExpires = new Date(Date.now() + 10 * 60 * 1000);
+
+      await sendVerificationOtp({
+        email: nextEmail,
+        otp: user.emailVerificationToken,
+      });
+    } else if (!nextEmail) {
+      user.email = null;
+      user.isEmailVerified = false;
+      user.emailVerificationToken = null;
+      user.emailVerificationExpires = null;
+    }
+  }
+
+  await user.save();
+  const safeUser = await User.findById(user._id).select('-passwordHash -tokenVersion');
+  return successResponse(res, safeUser, 'User updated');
 });
 
 const deleteUserById = asyncHandler(async (req, res) => {

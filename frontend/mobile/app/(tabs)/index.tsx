@@ -40,7 +40,7 @@ function formatTime(dateStr?: string | null): string {
 function getDisplayName(conv: Conversation, currentUserId: string): string {
   if (conv.type === 'group' && conv.name) return conv.name;
   // For direct chats, show the other participant's username
-  const otherUser = conv.participants?.find((p) => p._id !== currentUserId);
+  const otherUser = conv.participants?.find((p) => (p._id || p.id || '') !== currentUserId);
   return otherUser?.username || 'Cuộc trò chuyện';
 }
 
@@ -50,7 +50,7 @@ function getDisplayAvatar(conv: Conversation, currentUserId: string): string {
     const name = conv.name || 'Group';
     return `https://ui-avatars.com/api/?name=${encodeURIComponent(name)}&background=8B5CF6&color=fff&size=100&bold=true`;
   }
-  const otherUser = conv.participants?.find((p) => p._id !== currentUserId);
+  const otherUser = conv.participants?.find((p) => (p._id || p.id || '') !== currentUserId);
   return (
     otherUser?.avatarUrl ||
     `https://ui-avatars.com/api/?name=${encodeURIComponent(otherUser?.username || 'U')}&background=6366F1&color=fff&size=100&bold=true`
@@ -116,7 +116,7 @@ export default function MessagesScreen() {
 
     // Check if the other user is online (for direct chats)
     const otherUser = !isGroup
-      ? item.participants?.find((p) => p._id !== currentUserId)
+      ? item.participants?.find((p) => (p._id || p.id || '') !== currentUserId)
       : null;
     const isOnline = otherUser?.isOnline;
 

@@ -6,6 +6,7 @@ const userIdParamSchema = z.object({
 
 const updateUserSchema = z.object({
   username: z.string().trim().min(3).max(50).optional(),
+  email: z.union([z.string().trim().email(), z.null()]).optional(),
   phone: z.string().trim().min(8).max(20).nullable().optional(),
   avatarUrl: z.string().trim().url().nullable().optional(),
 });

@@ -9,6 +9,7 @@ import {
   ScrollView,
   SafeAreaView,
   ActivityIndicator,
+  Alert,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { Link } from 'expo-router';
@@ -47,13 +48,19 @@ export default function LoginScreen() {
     setErrorMsg('');
     setIsSubmitting(true);
     try {
-      await login(
+      const loggedInUser = await login(
         isEmail
           ? { email: ident, password: pwd }
           : isPhone
             ? { phone: ident, password: pwd }
             : { username: ident, password: pwd },
       );
+      if (loggedInUser?.email && !loggedInUser?.isEmailVerified) {
+        Alert.alert(
+          'Email chưa xác thực',
+          'Bạn vẫn có thể dùng ứng dụng. Hãy xác thực email để mở đủ tính năng bảo mật.',
+        );
+      }
     } catch (err: any) {
       if (err?.errorCode === 'INVALID_CREDENTIALS' || err?.statusCode === 401) {
         setErrorMsg('Sai tài khoản hoặc mật khẩu');
@@ -95,7 +102,7 @@ export default function LoginScreen() {
                 <Ionicons name="chatbubbles" size={48} color="white" />
               </View>
               <Text style={{ fontSize: 36, fontWeight: '800', color: '#0F172A', letterSpacing: -0.5 }}>
-                Zalo <Text style={{ color: '#2563EB' }}>Chat</Text>
+                Zalo <Text style={{ color: '#2563EB' }}>Edu</Text>
               </Text>
               <Text style={{ color: '#64748B', marginTop: 8, textAlign: 'center', fontSize: 17, fontWeight: '500' }}>
                 Kết nối mọi lúc, mọi nơi
