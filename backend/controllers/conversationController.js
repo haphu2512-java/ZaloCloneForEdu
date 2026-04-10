@@ -1,4 +1,5 @@
 const Conversation = require('../models/Conversation');
+const ConversationPreference = require('../models/ConversationPreference');
 const Message = require('../models/Message');
 const asyncHandler = require('../utils/asyncHandler');
 const ApiError = require('../utils/apiError');
@@ -41,9 +42,15 @@ const listConversations = asyncHandler(async (req, res) => {
   const page = Number(req.query.page);
   const limit = Number(req.query.limit);
   const skip = (page - 1) * limit;
+  const hiddenOrDeletedPrefs = await ConversationPreference.find({
+    userId: req.user._id,
+    $or: [{ isHidden: true }, { isDeleted: true }],
+  }).select('conversationId');
+  const excludedConversationIds = hiddenOrDeletedPrefs.map((item) => item.conversationId);
 
   const baseFilter = {
     participants: req.user._id,
+    ...(excludedConversationIds.length > 0 ? { _id: { $nin: excludedConversationIds } } : {}),
   };
 
   const [conversations, total] = await Promise.all([
@@ -90,11 +97,20 @@ const listConversations = asyncHandler(async (req, res) => {
       latestMessage: latest ? latest.toObject() : null,
     };
   });
+  const preferences = await ConversationPreference.find({
+    userId: req.user._id,
+    conversationId: { $in: conversationIds },
+  });
+  const prefMap = new Map(preferences.map((pref) => [toStr(pref.conversationId), pref.toObject()]));
+  const itemsWithPrefs = items.map((conversation) => ({
+    ...conversation,
+    preference: prefMap.get(toStr(conversation._id)) || null,
+  }));
 
   return successResponse(
     res,
     {
-      items,
+      items: itemsWithPrefs,
       pagination: {
         page,
         limit,
@@ -267,6 +283,74 @@ const leaveGroup = asyncHandler(async (req, res) => {
   return successResponse(res, conversation, 'Left group successfully');
 });
 
+const updateGroupAvatar = asyncHandler(async (req, res) => {
+  const { id } = req.params;
+  const { avatarUrl } = req.body;
+  const conversation = await Conversation.findById(id);
+  ensureGroupConversation(conversation);
+  ensureAdminOrOwner(conversation, req.user._id);
+  conversation.avatarUrl = avatarUrl;
+  await conversation.save();
+  return successResponse(res, conversation, 'Group avatar updated');
+});
+
+const updateGroupNickname = asyncHandler(async (req, res) => {
+  const { id, memberId } = req.params;
+  const { nickname } = req.body;
+  const conversation = await Conversation.findById(id);
+  ensureGroupConversation(conversation);
+  ensureGroupMember(conversation, req.user._id);
+
+  const isTargetMember = conversation.participants.some((participantId) => toStr(participantId) === memberId);
+  if (!isTargetMember) {
+    throw new ApiError(404, 'MEMBER_NOT_FOUND', 'User is not in this group');
+  }
+
+  conversation.nicknames.set(memberId, nickname.trim());
+  await conversation.save();
+  return successResponse(res, conversation, 'Group nickname updated');
+});
+
+const pinGroupMessage = asyncHandler(async (req, res) => {
+  const { id } = req.params;
+  const { messageId } = req.body;
+  const conversation = await Conversation.findById(id);
+  ensureGroupConversation(conversation);
+  ensureAdminOrOwner(conversation, req.user._id);
+  const message = await Message.findById(messageId);
+  if (!message || toStr(message.conversationId) !== toStr(id)) {
+    throw new ApiError(404, 'MESSAGE_NOT_FOUND', 'Message does not belong to this group');
+  }
+  conversation.pinnedMessageId = messageId;
+  await conversation.save();
+  return successResponse(res, conversation, 'Group message pinned');
+});
+
+const unpinGroupMessage = asyncHandler(async (req, res) => {
+  const { id } = req.params;
+  const conversation = await Conversation.findById(id);
+  ensureGroupConversation(conversation);
+  ensureAdminOrOwner(conversation, req.user._id);
+  conversation.pinnedMessageId = null;
+  await conversation.save();
+  return successResponse(res, conversation, 'Group pinned message cleared');
+});
+
+const updateConversationPreference = asyncHandler(async (req, res) => {
+  const { id } = req.params;
+  const conversation = await Conversation.findById(id);
+  if (!conversation) {
+    throw new ApiError(404, 'CONVERSATION_NOT_FOUND', 'Conversation not found');
+  }
+  ensureGroupMember(conversation, req.user._id);
+  const pref = await ConversationPreference.findOneAndUpdate(
+    { userId: req.user._id, conversationId: id },
+    { $set: req.body, $setOnInsert: { userId: req.user._id, conversationId: id } },
+    { new: true, upsert: true },
+  );
+  return successResponse(res, pref, 'Conversation preference updated');
+});
+
 module.exports = {
   listConversations,
   createConversation,
@@ -277,4 +361,9 @@ module.exports = {
   demoteGroupAdmin,
   transferGroupOwner,
   leaveGroup,
+  updateGroupAvatar,
+  updateGroupNickname,
+  pinGroupMessage,
+  unpinGroupMessage,
+  updateConversationPreference,
 };

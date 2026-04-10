@@ -3,19 +3,21 @@ import {
   FlatList,
   View,
   Text,
-  Image,
-  TouchableOpacity,
   RefreshControl,
   ActivityIndicator,
   StyleSheet,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { getConversations } from '@/utils/messageService';
+import { connectSocket, getSocket } from '@/utils/socketService';
 import { useAuth } from '@/context/auth';
 import Colors from '@/constants/Colors';
 import { useColorScheme } from '@/components/useColorScheme';
 import type { Conversation } from '@/types/chat';
 import { useRouter } from 'expo-router';
+import { Alert } from 'react-native';
+import { updateConversationPreference } from '@/utils/messageService';
+import { ChatListItem } from '@/components/chat/ChatListItem';
 
 function formatTime(dateStr?: string | null): string {
   if (!dateStr) return '';
@@ -47,6 +49,7 @@ function getDisplayName(conv: Conversation, currentUserId: string): string {
 /** Get display avatar for a conversation */
 function getDisplayAvatar(conv: Conversation, currentUserId: string): string {
   if (conv.type === 'group') {
+    if (conv.avatarUrl) return conv.avatarUrl;
     const name = conv.name || 'Group';
     return `https://ui-avatars.com/api/?name=${encodeURIComponent(name)}&background=8B5CF6&color=fff&size=100&bold=true`;
   }
@@ -65,7 +68,7 @@ function getSenderName(sender: any): string | undefined {
 
 export default function MessagesScreen() {
   const colorScheme = useColorScheme() ?? 'light';
-  const colors = Colors[colorScheme];
+  const colors = Colors[colorScheme === 'dark' ? 'dark' : 'light'];
   const { user } = useAuth();
 
   const [conversations, setConversations] = useState<Conversation[]>([]);
@@ -82,6 +85,44 @@ export default function MessagesScreen() {
       console.log('Failed to fetch conversations:', error.message);
     }
   }, []);
+
+  useEffect(() => {
+    let mounted = true;
+    let off: (() => void) | null = null;
+
+    const setupSocketForList = async () => {
+      const socket = await connectSocket();
+      if (!mounted || !socket) return;
+
+      const onConversationUpdated = (payload: any) => {
+        const conversationId = payload?.conversationId;
+        if (!conversationId) return;
+        setConversations((prev) => {
+          const idx = prev.findIndex((conv) => conv._id === conversationId || conv.id === conversationId);
+          if (idx < 0) {
+            void loadConversations();
+            return prev;
+          }
+          const updated = {
+            ...prev[idx],
+            latestMessage: payload.latestMessage || prev[idx].latestMessage,
+            lastMessageAt: payload.latestMessage?.createdAt || new Date().toISOString(),
+          };
+          const next = [updated, ...prev.filter((_, i) => i !== idx)];
+          return next;
+        });
+      };
+
+      socket.on('conversation_updated', onConversationUpdated);
+      off = () => socket.off('conversation_updated', onConversationUpdated);
+    };
+
+    void setupSocketForList();
+    return () => {
+      mounted = false;
+      if (off) off();
+    };
+  }, [loadConversations]);
 
   useEffect(() => {
     const init = async () => {
@@ -104,6 +145,41 @@ export default function MessagesScreen() {
     router.push(`/chat/${item._id}`);
   };
 
+  const handleLongPress = (item: Conversation) => {
+    Alert.alert('Tùy chọn cuộc trò chuyện', 'Chọn thao tác', [
+      {
+        text: 'Phân loại: Công việc',
+        onPress: async () => {
+          await updateConversationPreference(item._id, { category: 'work' });
+          await loadConversations();
+        },
+      },
+      {
+        text: 'Phân loại: Gia đình',
+        onPress: async () => {
+          await updateConversationPreference(item._id, { category: 'family' });
+          await loadConversations();
+        },
+      },
+      {
+        text: 'Ẩn cuộc trò chuyện',
+        onPress: async () => {
+          await updateConversationPreference(item._id, { isHidden: true });
+          await loadConversations();
+        },
+      },
+      {
+        text: 'Xóa khỏi danh sách',
+        style: 'destructive',
+        onPress: async () => {
+          await updateConversationPreference(item._id, { isDeleted: true });
+          await loadConversations();
+        },
+      },
+      { text: 'Hủy', style: 'cancel' },
+    ]);
+  };
+
   const renderItem = ({ item }: { item: Conversation }) => {
     const currentUserId = user?.id || '';
     const displayName = getDisplayName(item, currentUserId);
@@ -121,50 +197,18 @@ export default function MessagesScreen() {
     const isOnline = otherUser?.isOnline;
 
     return (
-      <TouchableOpacity
-        style={[styles.chatItem, { backgroundColor: colors.surface }]}
+      <ChatListItem
+        id={item._id}
+        name={displayName}
+        avatar={displayAvatar}
+        lastMessage={senderName && latestMsg ? `${senderName}: ${lastMessageText}` : lastMessageText}
+        time={formatTime(lastMessageTime)}
+        roomModel={isGroup ? 'Group' : 'Conversation'}
+        isOnline={!!isOnline}
+        colors={colors}
         onPress={() => handlePress(item)}
-        activeOpacity={0.7}
-      >
-        {/* Avatar */}
-        <View style={styles.avatarWrapper}>
-          <Image
-            source={{ uri: displayAvatar }}
-            style={styles.avatar}
-          />
-          {/* Online indicator */}
-          {isOnline && (
-            <View style={[styles.onlineDot, { borderColor: colors.surface }]} />
-          )}
-          {/* Group badge */}
-          {isGroup && (
-            <View style={[styles.roomBadge, { backgroundColor: '#8B5CF6' }]}>
-              <Ionicons name="people" size={10} color="#fff" />
-            </View>
-          )}
-        </View>
-
-        {/* Content */}
-        <View style={styles.chatContent}>
-          <View style={styles.chatTopRow}>
-            <Text
-              style={[styles.chatName, { color: colors.text }]}
-              numberOfLines={1}
-            >
-              {displayName}
-            </Text>
-            <Text style={[styles.chatTime, { color: colors.muted }]}>
-              {formatTime(lastMessageTime)}
-            </Text>
-          </View>
-          <Text
-            style={[styles.chatMessage, { color: colors.muted }]}
-            numberOfLines={1}
-          >
-            {senderName && latestMsg ? `${senderName}: ${lastMessageText}` : lastMessageText}
-          </Text>
-        </View>
-      </TouchableOpacity>
+        onLongPress={() => handleLongPress(item)}
+      />
     );
   };
 
@@ -201,9 +245,7 @@ export default function MessagesScreen() {
         }
         contentContainerStyle={conversations.length === 0 ? { flex: 1 } : undefined}
         showsVerticalScrollIndicator={false}
-        ItemSeparatorComponent={() => (
-          <View style={{ height: StyleSheet.hairlineWidth, backgroundColor: colors.border, marginLeft: 80 }} />
-        )}
+        ItemSeparatorComponent={() => <View style={{ height: 10, backgroundColor: colors.background }} />}
       />
     </View>
   );
@@ -212,43 +254,6 @@ export default function MessagesScreen() {
 const styles = StyleSheet.create({
   container: { flex: 1 },
   loadingContainer: { flex: 1, justifyContent: 'center', alignItems: 'center' },
-
-  chatItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 16,
-    paddingVertical: 14,
-  },
-  avatarWrapper: { position: 'relative', marginRight: 14 },
-  avatar: { width: 54, height: 54, borderRadius: 27 },
-  onlineDot: {
-    position: 'absolute',
-    bottom: 1,
-    right: 1,
-    width: 14,
-    height: 14,
-    borderRadius: 7,
-    backgroundColor: '#10B981',
-    borderWidth: 2,
-  },
-  roomBadge: {
-    position: 'absolute',
-    bottom: -1,
-    right: -1,
-    width: 20,
-    height: 20,
-    borderRadius: 10,
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderWidth: 2,
-    borderColor: '#fff',
-  },
-
-  chatContent: { flex: 1 },
-  chatTopRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 },
-  chatName: { fontSize: 16, fontWeight: '600', flex: 1, marginRight: 8 },
-  chatTime: { fontSize: 12 },
-  chatMessage: { fontSize: 14 },
 
   emptyContainer: { flex: 1, justifyContent: 'center', alignItems: 'center', paddingHorizontal: 40 },
   emptyIcon: { width: 96, height: 96, borderRadius: 48, alignItems: 'center', justifyContent: 'center', marginBottom: 20 },

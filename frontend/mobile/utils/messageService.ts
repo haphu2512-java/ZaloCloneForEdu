@@ -122,6 +122,57 @@ export async function leaveGroup(conversationId: string): Promise<Conversation> 
   return normalizeConversation(res.data);
 }
 
+export async function updateGroupAvatar(conversationId: string, avatarUrl: string): Promise<Conversation> {
+  const res = await fetchAPI(`${CONVERSATIONS_ENDPOINT}/${conversationId}/avatar`, {
+    method: 'PUT',
+    body: JSON.stringify({ avatarUrl }),
+  });
+  return normalizeConversation(res.data);
+}
+
+export async function updateGroupNickname(
+  conversationId: string,
+  memberId: string,
+  nickname: string,
+): Promise<Conversation> {
+  const res = await fetchAPI(`${CONVERSATIONS_ENDPOINT}/${conversationId}/nicknames/${memberId}`, {
+    method: 'PUT',
+    body: JSON.stringify({ nickname }),
+  });
+  return normalizeConversation(res.data);
+}
+
+export async function pinGroupMessage(conversationId: string, messageId: string): Promise<Conversation> {
+  const res = await fetchAPI(`${CONVERSATIONS_ENDPOINT}/${conversationId}/pin`, {
+    method: 'PUT',
+    body: JSON.stringify({ messageId }),
+  });
+  return normalizeConversation(res.data);
+}
+
+export async function unpinGroupMessage(conversationId: string): Promise<Conversation> {
+  const res = await fetchAPI(`${CONVERSATIONS_ENDPOINT}/${conversationId}/pin`, {
+    method: 'DELETE',
+  });
+  return normalizeConversation(res.data);
+}
+
+export async function updateConversationPreference(
+  conversationId: string,
+  payload: {
+    category?: 'primary' | 'work' | 'family' | 'other';
+    nickname?: string | null;
+    isHidden?: boolean;
+    isDeleted?: boolean;
+  },
+): Promise<any> {
+  const res = await fetchAPI(`${CONVERSATIONS_ENDPOINT}/${conversationId}/preferences`, {
+    method: 'PUT',
+    body: JSON.stringify(payload),
+  });
+  return res.data;
+}
+
 // ==================== MESSAGES ====================
 
 /**

@@ -11,6 +11,10 @@ const {
   updateGroupNameSchema,
   addGroupMembersSchema,
   transferOwnerSchema,
+  updateGroupAvatarSchema,
+  updateNicknameSchema,
+  pinMessageSchema,
+  updateConversationPreferenceSchema,
 } = require('../validators/conversationSchemas');
 
 const router = express.Router();
@@ -272,6 +276,36 @@ router.post(
   auth,
   validate({ params: conversationIdParamSchema }),
   conversationController.leaveGroup,
+);
+router.put(
+  '/:id/avatar',
+  auth,
+  validate({ params: conversationIdParamSchema, body: updateGroupAvatarSchema }),
+  conversationController.updateGroupAvatar,
+);
+router.put(
+  '/:id/nicknames/:memberId',
+  auth,
+  validate({ params: memberIdParamSchema, body: updateNicknameSchema }),
+  conversationController.updateGroupNickname,
+);
+router.put(
+  '/:id/pin',
+  auth,
+  validate({ params: conversationIdParamSchema, body: pinMessageSchema }),
+  conversationController.pinGroupMessage,
+);
+router.delete(
+  '/:id/pin',
+  auth,
+  validate({ params: conversationIdParamSchema }),
+  conversationController.unpinGroupMessage,
+);
+router.put(
+  '/:id/preferences',
+  auth,
+  validate({ params: conversationIdParamSchema, body: updateConversationPreferenceSchema }),
+  conversationController.updateConversationPreference,
 );
 
 module.exports = router;

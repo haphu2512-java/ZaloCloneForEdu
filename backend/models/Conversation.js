@@ -13,6 +13,10 @@ const conversationSchema = new mongoose.Schema(
       trim: true,
       default: null,
     },
+    avatarUrl: {
+      type: String,
+      default: null,
+    },
     participants: [
       {
         type: mongoose.Schema.Types.ObjectId,
@@ -37,6 +41,16 @@ const conversationSchema = new mongoose.Schema(
         ref: 'User',
       },
     ],
+    pinnedMessageId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'Message',
+      default: null,
+    },
+    nicknames: {
+      type: Map,
+      of: String,
+      default: {},
+    },
     lastMessageAt: {
       type: Date,
       default: null,
