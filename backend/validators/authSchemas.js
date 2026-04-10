@@ -54,6 +54,10 @@ const verifyEmailSchema = z.object({
   token: z.string().trim().regex(/^\d{6}$/, 'OTP must be 6 digits'),
 });
 
+const resendVerificationSchema = z.object({
+  email: z.string().trim().email(),
+});
+
 module.exports = {
   registerSchema,
   loginSchema,
@@ -62,4 +66,5 @@ module.exports = {
   resetPasswordSchema,
   changePasswordSchema,
   verifyEmailSchema,
+  resendVerificationSchema,
 };

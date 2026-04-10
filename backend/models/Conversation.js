@@ -25,6 +25,18 @@ const conversationSchema = new mongoose.Schema(
       ref: 'User',
       required: true,
     },
+    ownerId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'User',
+      required: false,
+      index: true,
+    },
+    adminIds: [
+      {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'User',
+      },
+    ],
     lastMessageAt: {
       type: Date,
       default: null,

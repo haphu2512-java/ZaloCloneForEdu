@@ -42,6 +42,8 @@ export interface Conversation {
   name?: string | null;
   participants: UserInfo[];
   createdBy: string;
+  ownerId?: string | UserInfo;
+  adminIds?: Array<string | UserInfo>;
   lastMessageAt?: string | null;
   createdAt: string;
   updatedAt: string;
@@ -122,6 +124,10 @@ export interface CreateConversationPayload {
   type: ConversationType;
   name?: string;
   participantIds: string[];
+}
+
+export interface TransferGroupOwnerPayload {
+  newOwnerId: string;
 }
 
 /** POST /friends/request body */

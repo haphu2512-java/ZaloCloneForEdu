@@ -56,6 +56,7 @@ const logPreviewUrlIfAny = (info) => {
   const previewUrl = nodemailer.getTestMessageUrl(info);
   if (previewUrl) {
     logger.info(`Ethereal preview: ${previewUrl}`);
+    console.log(`[EMAIL] Ethereal preview: ${previewUrl}`);
   }
 };
 
@@ -70,6 +71,7 @@ const sendEmail = async ({ to, subject, text, html }) => {
       html,
     });
     logger.info(`Email sent: ${info.messageId}`);
+    console.log(`[EMAIL] Sent message: ${info.messageId}`);
     logPreviewUrlIfAny(info);
     return info;
   } catch (error) {
@@ -84,6 +86,7 @@ const sendEmail = async ({ to, subject, text, html }) => {
         html,
       });
       logger.info(`Email sent via Ethereal fallback: ${info.messageId}`);
+      console.log(`[EMAIL] Sent via fallback: ${info.messageId}`);
       logPreviewUrlIfAny(info);
       return info;
     }

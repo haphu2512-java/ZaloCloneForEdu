@@ -13,11 +13,13 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
+import { useLocalSearchParams } from 'expo-router';
 import { resendVerificationEmail, verifyEmail } from '../../utils/authService';
 import { useAuth } from '../../context/auth';
 
 export default function VerifyEmailScreen() {
   const router = useRouter();
+  const params = useLocalSearchParams<{ email?: string }>();
   const { user, refreshUser } = useAuth();
   const [token, setToken] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -50,7 +52,7 @@ export default function VerifyEmailScreen() {
       await verifyEmail(token.trim());
       Alert.alert('Thành công', 'Email đã được xác thực!');
       await refreshUser();
-      router.navigate('/(tabs)');
+      router.replace('/(auth)/login' as any);
     } catch (err: any) {
       Alert.alert('Lỗi', err.message || 'Mã OTP không hợp lệ hoặc đã hết hạn');
     } finally {
@@ -59,9 +61,16 @@ export default function VerifyEmailScreen() {
   };
 
   const handleResend = async () => {
+    const targetEmail =
+      (typeof params.email === 'string' ? params.email : '').trim().toLowerCase()
+      || (user?.email || '').trim().toLowerCase();
+    if (!targetEmail) {
+      Alert.alert('Lỗi', 'Không tìm thấy email để gửi lại OTP');
+      return;
+    }
     setIsResending(true);
     try {
-      await resendVerificationEmail();
+      await resendVerificationEmail(targetEmail);
       Alert.alert('Thành công', 'Đã gửi lại OTP 6 chữ số về email của bạn');
     } catch (err: any) {
       Alert.alert('Lỗi', err.message || 'Không thể gửi lại OTP');

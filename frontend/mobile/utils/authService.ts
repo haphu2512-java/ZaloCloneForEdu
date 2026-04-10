@@ -133,17 +133,7 @@ export async function register(payload: RegisterPayload): Promise<AuthResponse> 
 
   const authData = res.data || {};
   const { user, accessToken, refreshToken } = authData;
-
-  if (accessToken) {
-    await storeToken(accessToken);
-    if (refreshToken) {
-      await storeRefreshToken(refreshToken);
-    }
-    if (user) {
-      await storeUserInfo(user);
-    }
-  }
-
+  // Register should not auto-login user. User must verify then login manually.
   return { success: true, user, accessToken, refreshToken };
 }
 
@@ -260,9 +250,10 @@ export async function verifyEmail(token: string): Promise<void> {
  * Gửi lại mã OTP xác thực email cho user đang đăng nhập
  * POST /auth/resend-verification
  */
-export async function resendVerificationEmail(): Promise<void> {
+export async function resendVerificationEmail(email: string): Promise<void> {
   await fetchAPI(`${AUTH_ENDPOINT}/resend-verification`, {
     method: 'POST',
+    body: JSON.stringify({ email }),
   });
 }
 

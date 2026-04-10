@@ -61,7 +61,12 @@ export default function RegisterScreen() {
         password,
       });
       if (isEmail) {
-        router.navigate('/(auth)/verify-email');
+        router.replace({
+          pathname: '/(auth)/verify-email' as any,
+          params: { email: ident.toLowerCase() },
+        });
+      } else {
+        router.replace('/(auth)/login' as any);
       }
     } catch (err: any) {
       setErrorMsg(err.message || 'Đăng ký thất bại');

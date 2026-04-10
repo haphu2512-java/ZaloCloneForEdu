@@ -103,8 +103,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const register = async (payload: RegisterPayload) => {
     const res = await authService.register(payload);
     if (!res.user) throw new Error('ÄÄƒng kÃ½ tháº¥t báº¡i');
-    // Backend tráº£ vá» token + user ngay sau register, auto login
-    setUser(res.user);
+    // Do not auto-login after register. User verifies email first, then logs in.
+    setUser(null);
   };
 
   const logout = async () => {

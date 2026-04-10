@@ -142,7 +142,8 @@ const verifyEmail = asyncHandler(async (req, res) => {
 });
 
 const resendVerificationEmail = asyncHandler(async (req, res) => {
-  const user = await User.findById(req.user._id);
+  const email = String(req.body.email || '').trim().toLowerCase();
+  const user = await User.findOne({ email, deletedAt: null });
   if (!user || user.deletedAt) {
     throw new ApiError(404, 'USER_NOT_FOUND', 'User not found');
   }

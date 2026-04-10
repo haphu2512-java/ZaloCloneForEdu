@@ -12,6 +12,7 @@ const {
   resetPasswordSchema,
   changePasswordSchema,
   verifyEmailSchema,
+  resendVerificationSchema,
 } = require('../validators/authSchemas');
 
 const router = express.Router();
@@ -147,7 +148,12 @@ router.post('/verify-email', authLimiter, validate({ body: verifyEmailSchema }),
  *       200:
  *         description: Verification OTP sent
  */
-router.post('/resend-verification', auth, authLimiter, authController.resendVerificationEmail);
+router.post(
+  '/resend-verification',
+  authLimiter,
+  validate({ body: resendVerificationSchema }),
+  authController.resendVerificationEmail,
+);
 /**
  * @openapi
  * /auth/forgot-password:
