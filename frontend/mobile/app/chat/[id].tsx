@@ -15,15 +15,13 @@ function ChatScreen() {
   const { id: conversationId } = useLocalSearchParams();
   const router = useRouter();
   const { user } = useAuth();
-  
+
   const [messages, setMessages] = useState<Message[]>([]);
   const [inputText, setInputText] = useState('');
   const [isLoading, setIsLoading] = useState(true);
   const [isSending, setIsSending] = useState(false);
   const [nextCursor, setNextCursor] = useState<string | null>(null);
   const [isFetchingMore, setIsFetchingMore] = useState(false);
-  
-  const flatListRef = useRef<FlatList>(null);
 
   const loadInitialMessages = useCallback(async () => {
     setIsLoading(true);
@@ -119,7 +117,7 @@ function ChatScreen() {
   const handleMessageLongPress = (msg: Message) => {
     const isMine = msg.senderId._id === user?.id || (msg.senderId as any) === user?.id; // backend might populate string or object
     const options = ['Hủy'];
-    const actions: Array<() => void> = [() => {}];
+    const actions: Array<() => void> = [() => { }];
 
     if (isMine && !msg.isRecalled) {
       options.push('Thu hồi tin nhắn (với mọi người)');
@@ -144,7 +142,7 @@ function ChatScreen() {
         }
       });
     }
-    
+
     // Add forward option
     if (!msg.isRecalled) {
       options.push('Chuyển tiếp (Forward)');
@@ -170,18 +168,18 @@ function ChatScreen() {
 
   const renderMessage = ({ item }: { item: Message }) => {
     const isMine = item.senderId._id === user?.id || (item.senderId as any) === user?.id;
-    
+
     if (item.isRecalled) {
       return (
-        <View style={[{ padding: 10, marginVertical: 4, marginHorizontal: 16, borderRadius: 16, maxWidth: '75%' }, 
-          isMine ? { alignSelf: 'flex-end', backgroundColor: '#F1F5F9' } : { alignSelf: 'flex-start', backgroundColor: '#F1F5F9' }]}>
+        <View style={[{ padding: 10, marginVertical: 4, marginHorizontal: 16, borderRadius: 16, maxWidth: '75%' },
+        isMine ? { alignSelf: 'flex-end', backgroundColor: '#F1F5F9' } : { alignSelf: 'flex-start', backgroundColor: '#F1F5F9' }]}>
           <Text style={{ color: '#94A3B8', fontStyle: 'italic' }}>Tin nhắn đã bị thu hồi</Text>
         </View>
       );
     }
 
     return (
-      <TouchableOpacity 
+      <TouchableOpacity
         onLongPress={() => handleMessageLongPress(item)}
         activeOpacity={0.8}
         style={[
@@ -205,8 +203,8 @@ function ChatScreen() {
 
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: '#fff' }}>
-      <Stack.Screen options={{ 
-        title: 'Trò chuyện', 
+      <Stack.Screen options={{
+        title: 'Trò chuyện',
         headerLeft: () => (
           <TouchableOpacity onPress={() => router.back()} style={{ marginLeft: 8 }}>
             <Ionicons name="arrow-back" size={24} color="#0F172A" />
@@ -216,7 +214,6 @@ function ChatScreen() {
 
       <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined} keyboardVerticalOffset={Platform.OS === 'ios' ? 90 : 0}>
         <FlatList
-          ref={flatListRef}
           data={messages}
           keyExtractor={item => item._id}
           renderItem={renderMessage}
@@ -249,3 +246,21 @@ function ChatScreen() {
 }
 
 export default ChatScreen;
+
+
+
+
+
+
+// Lỗi 1 : 
+//  LOG  Fetching: http://192.168.100.53:5000/api/v1/friends/request
+//  ERROR  API Error on /friends/request: Invalid payload 
+// Lỗi 2 : 
+//  LOG  Fetching: http://192.168.100.53:5000/api/v1/search/users?q=09&page=1&limit=20
+//  ERROR  Each child in a list should have a unique "key" prop.%s%s See https://react.dev/link/warning-keys for more information.
+
+// Check the render method of `ScrollView`.  It was passed a child from VirtualizedList.
+// Lỗi 3:
+//  LOG  Fetching: http://192.168.100.53:5000/api/v1/auth/login
+//  ERROR  API Error on /auth/login: Invalid payload 
+// --> Sai mật khẩu hoặc tài khoản nhưng không thống báo, mà lại trả ra Invalid Payload
