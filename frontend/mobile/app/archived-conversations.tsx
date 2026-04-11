@@ -169,7 +169,7 @@ export default function ArchivedConversationsScreen() {
             </View>
             <Text style={[styles.emptyTitle, { color: colors.text }]}>Không có tin nhắn lưu trữ</Text>
             <Text style={[styles.emptySubtitle, { color: colors.muted }]}>
-                Giữ lâu vào cuộc trò chuyện và chọn "Ẩn" để lưu trữ.
+                Giữ lâu vào cuộc trò chuyện và chọn "Lưu trữ tin nhắn" để ẩn.
             </Text>
         </View>
     );
@@ -177,11 +177,11 @@ export default function ArchivedConversationsScreen() {
     return (
         <View style={[styles.container, { backgroundColor: colors.background }]}>
             {/* Header */}
-            <View style={[styles.header, { backgroundColor: colors.tint, paddingTop: insets.top + 8 }]}>
+            <View style={[styles.header, { backgroundColor: colorScheme === 'dark' ? colors.surface : colors.tint, paddingTop: insets.top + 8 }]}>
                 <TouchableOpacity onPress={() => router.back()} style={styles.backBtn}>
-                    <Ionicons name="arrow-back" size={24} color="#fff" />
+                    <Ionicons name="arrow-back" size={24} color={colorScheme === 'dark' ? colors.text : "#fff"} />
                 </TouchableOpacity>
-                <Text style={styles.headerTitle}>Tin nhắn lưu trữ</Text>
+                <Text style={[styles.headerTitle, { color: colorScheme === 'dark' ? colors.text : "#fff" }]}>Tin nhắn lưu trữ</Text>
                 <View style={{ width: 40 }} />
             </View>
 

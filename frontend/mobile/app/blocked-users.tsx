@@ -134,15 +134,15 @@ export default function BlockedUsersScreen() {
                 style={[
                     styles.header,
                     {
-                        backgroundColor: colors.tint,
+                        backgroundColor: colorScheme === 'dark' ? colors.surface : colors.tint,
                         paddingTop: insets.top + 8,
                     },
                 ]}
             >
                 <TouchableOpacity onPress={() => router.back()} style={styles.backBtn}>
-                    <Ionicons name="arrow-back" size={24} color="#fff" />
+                    <Ionicons name="arrow-back" size={24} color={colorScheme === 'dark' ? colors.text : "#fff"} />
                 </TouchableOpacity>
-                <Text style={styles.headerTitle}>Danh sách chặn</Text>
+                <Text style={[styles.headerTitle, { color: colorScheme === 'dark' ? colors.text : "#fff" }]}>Danh sách chặn</Text>
                 <View style={{ width: 40 }} />
             </View>
 
